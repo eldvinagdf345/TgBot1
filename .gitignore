@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+watermark_migrator/work/
+watermark_migrator/state.sqlite3
+watermark_migrator/*.session
