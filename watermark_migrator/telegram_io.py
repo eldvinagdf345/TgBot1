@@ -2,6 +2,7 @@ import os
 
 from telethon import TelegramClient
 from telethon.tl.custom.message import Message
+from telethon.tl.types import DocumentAttributeFilename, DocumentAttributeVideo
 
 from .config import Config
 
@@ -37,12 +38,31 @@ async def download_media_auto(client: TelegramClient, msg: Message, dest_dir: st
 
 
 async def upload_message(
-    client: TelegramClient, target_channel: str, media_path: str | None, caption: str
+    client: TelegramClient,
+    target_channel: str,
+    media_path: str | None,
+    caption: str,
+    video_attrs: tuple[float, int, int] | None = None,
 ) -> None:
+    """video_attrs, if given, is (duration_seconds, width, height) measured
+    straight from the actual output file - passing it explicitly avoids
+    Telegram guessing the wrong aspect ratio (which otherwise shows up as a
+    stretched/squashed video, since Telethon can only auto-detect this with
+    the optional `hachoir` package installed)."""
     entity = await client.get_entity(target_channel)
     if media_path:
+        attributes = None
+        if video_attrs is not None:
+            duration, w, h = video_attrs
+            attributes = [
+                DocumentAttributeVideo(
+                    duration=duration, w=w, h=h, supports_streaming=True
+                ),
+                DocumentAttributeFilename(file_name=os.path.basename(media_path)),
+            ]
         await client.send_file(
-            entity, media_path, caption=caption or None, supports_streaming=True
+            entity, media_path, caption=caption or None,
+            supports_streaming=True, attributes=attributes,
         )
     elif caption and caption.strip():
         await client.send_message(entity, caption)

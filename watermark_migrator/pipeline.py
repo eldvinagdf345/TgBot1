@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from .config import Config, load_config
 from .db import StateDB, open_db
 from .detector import detect_watermark
-from .ffmpeg_utils import clean_watermark, extract_sample_frames
+from .ffmpeg_utils import clean_watermark, extract_sample_frames, get_duration, get_video_dimensions
 from .telegram_io import (
     download_media,
     download_media_auto,
@@ -25,6 +25,7 @@ class ProcessResult:
     skip: bool  # True => already handled in a previous run, or errored this run; nothing to publish
     media_path: str | None  # local file ready for upload, or None for a text-only message
     transcoded: bool  # True => media_path was re-encoded by us (force the .mp4 extension)
+    is_video: bool = False  # True => media_path is a video; publisher should attach w/h/duration
 
 
 async def _process_one(cfg: Config, client, db: StateDB, msg) -> ProcessResult:
@@ -66,7 +67,7 @@ async def _process_one(cfg: Config, client, db: StateDB, msg) -> ProcessResult:
 
         if bbox is None:
             db.upsert_status(message_id, "uploading", watermark_found=0)
-            return ProcessResult(skip=False, media_path=raw_path, transcoded=False)
+            return ProcessResult(skip=False, media_path=raw_path, transcoded=False, is_video=True)
 
         x, y, w, h = bbox
         db.upsert_status(
@@ -76,7 +77,7 @@ async def _process_one(cfg: Config, client, db: StateDB, msg) -> ProcessResult:
         await clean_watermark(cfg, raw_path, clean_path, bbox)
         os.remove(raw_path)
         db.upsert_status(message_id, "uploading")
-        return ProcessResult(skip=False, media_path=clean_path, transcoded=True)
+        return ProcessResult(skip=False, media_path=clean_path, transcoded=True, is_video=True)
 
     except Exception as e:
         logger.exception(f"message {message_id} failed")
@@ -130,8 +131,15 @@ async def run(cfg: Config | None = None) -> None:
                             final_path = os.path.join(os.path.dirname(result.media_path), target_name)
                             if final_path != result.media_path:
                                 os.rename(result.media_path, final_path)
+                        video_attrs = None
+                        if result.is_video and final_path:
+                            duration = await get_duration(cfg, final_path)
+                            width, height = await get_video_dimensions(cfg, final_path)
+                            video_attrs = (duration, width, height)
                         caption = sanitize_text(msg.message, brand_terms)
-                        await upload_message(client, cfg.target_channel, final_path, caption)
+                        await upload_message(
+                            client, cfg.target_channel, final_path, caption, video_attrs
+                        )
                         db.upsert_status(msg.id, "done")
                     except Exception as e:
                         logger.exception(f"upload failed for message {msg.id}")

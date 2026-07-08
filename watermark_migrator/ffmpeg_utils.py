@@ -25,6 +25,20 @@ async def get_duration(cfg: Config, video_path: str) -> float:
     return float(json.loads(out)["format"]["duration"])
 
 
+async def get_video_dimensions(cfg: Config, video_path: str) -> tuple[int, int]:
+    cmd = [
+        cfg.ffprobe_bin, "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "json", video_path,
+    ]
+    code, out, err = await _run(cmd)
+    if code != 0:
+        raise RuntimeError(f"ffprobe failed: {err.decode(errors='ignore')}")
+    stream = json.loads(out)["streams"][0]
+    return int(stream["width"]), int(stream["height"])
+
+
 async def extract_sample_frames(cfg: Config, video_path: str, out_dir: str) -> list[str]:
     duration = await get_duration(cfg, video_path)
     fractions = [0.15, 0.5, 0.85][: cfg.sample_frames] or [0.5]
