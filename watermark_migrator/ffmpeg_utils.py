@@ -60,6 +60,17 @@ async def clean_watermark(
     cfg: Config, input_path: str, output_path: str, bbox: tuple[int, int, int, int]
 ) -> None:
     x, y, w, h = bbox
+
+    # delogo needs a margin around the box to interpolate from - a watermark
+    # sitting right in a corner (very common) can otherwise butt up against
+    # the frame edge and ffmpeg refuses with "Logo area is outside of the frame".
+    frame_w, frame_h = await get_video_dimensions(cfg, input_path)
+    margin = 2
+    x = max(margin, min(x, frame_w - margin - 1))
+    y = max(margin, min(y, frame_h - margin - 1))
+    w = max(4, min(w, frame_w - margin - x))
+    h = max(4, min(h, frame_h - margin - y))
+
     delogo = f"delogo=x={x}:y={y}:w={w}:h={h}:show=0"
 
     if cfg.use_gpu:
