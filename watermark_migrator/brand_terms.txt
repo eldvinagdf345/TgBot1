@@ -1,0 +1,5 @@
+# One phrase per line, matched case-insensitively (spacing is flexible).
+# Lines starting with # are ignored.
+# Add every variant you spot (different spacing, transliteration, emoji-decorated, etc).
+@vsefrm
+Форум ВСЕ

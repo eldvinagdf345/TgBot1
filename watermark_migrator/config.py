@@ -12,7 +12,8 @@ class Config:
     session_name: str
     source_channel: str
     target_channel: str
-    watermark_template: str
+    watermark_templates_dir: str
+    brand_terms_path: str
     work_dir: str
     db_path: str
     match_threshold: float
@@ -35,8 +36,11 @@ def load_config() -> Config:
         session_name=os.environ.get("SESSION_NAME", "watermark_migrator"),
         source_channel=os.environ["SOURCE_CHANNEL"],
         target_channel=os.environ["TARGET_CHANNEL"],
-        watermark_template=os.environ.get(
-            "WATERMARK_TEMPLATE", "watermark_migrator/templates/watermark.png"
+        watermark_templates_dir=os.environ.get(
+            "WATERMARK_TEMPLATES_DIR", "watermark_migrator/templates"
+        ),
+        brand_terms_path=os.environ.get(
+            "BRAND_TERMS_PATH", "watermark_migrator/brand_terms.txt"
         ),
         work_dir=os.environ.get("WORK_DIR", "watermark_migrator/work"),
         db_path=os.environ.get("DB_PATH", "watermark_migrator/state.sqlite3"),

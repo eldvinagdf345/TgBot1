@@ -8,6 +8,7 @@ from .db import StateDB, open_db
 from .detector import detect_watermark
 from .ffmpeg_utils import clean_watermark, extract_sample_frames
 from .telegram_io import download_video, iter_source_videos, make_client, upload_video
+from .text_rules import load_brand_terms, sanitize_text, sanitized_filename
 
 logger = logging.getLogger("watermark_migrator")
 
@@ -33,7 +34,7 @@ async def _process_one(cfg: Config, client, db: StateDB, msg) -> str | None:
         frame_dir = os.path.join(job_dir, "frames")
         os.makedirs(frame_dir, exist_ok=True)
         frames = await extract_sample_frames(cfg, raw_path, frame_dir)
-        bbox = detect_watermark(cfg, frames, cfg.watermark_template) if frames else None
+        bbox = detect_watermark(cfg, frames, cfg.watermark_templates_dir) if frames else None
         shutil.rmtree(frame_dir, ignore_errors=True)
 
         if bbox is None:
@@ -60,6 +61,8 @@ async def run(cfg: Config | None = None) -> None:
     cfg = cfg or load_config()
     os.makedirs(cfg.work_dir, exist_ok=True)
     logging.basicConfig(level=logging.INFO)
+
+    brand_terms = load_brand_terms(cfg.brand_terms_path)
 
     with open_db(cfg.db_path) as db:
         client = make_client(cfg)
@@ -90,8 +93,14 @@ async def run(cfg: Config | None = None) -> None:
                 msg = messages[next_pos]
                 if path is not None:
                     try:
+                        original_name = msg.file.name if msg.file else None
+                        target_name = sanitized_filename(original_name, brand_terms, msg.id)
+                        final_path = os.path.join(os.path.dirname(path), target_name)
+                        if final_path != path:
+                            os.rename(path, final_path)
+                        caption = sanitize_text(msg.message, brand_terms)
                         await upload_video(
-                            client, cfg.target_channel, path, msg.message or ""
+                            client, cfg.target_channel, final_path, caption
                         )
                         db.upsert_status(msg.id, "done")
                     except Exception as e:
