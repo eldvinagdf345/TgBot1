@@ -61,23 +61,37 @@ async def clean_watermark(
 ) -> None:
     x, y, w, h = bbox
 
-    # delogo needs a margin around the box to interpolate from - a watermark
-    # sitting right in a corner (very common) can otherwise butt up against
-    # the frame edge and ffmpeg refuses with "Logo area is outside of the frame".
-    frame_w, frame_h = await get_video_dimensions(cfg, input_path)
-    margin = 2
-    x = max(margin, min(x, frame_w - margin - 1))
-    y = max(margin, min(y, frame_h - margin - 1))
-    w = max(4, min(w, frame_w - margin - x))
-    h = max(4, min(h, frame_h - margin - y))
+    # Pad the detected box a bit so slightly-off detection still fully covers
+    # the badge (better to blur a touch more area than leave an edge of text
+    # readable).
+    pad = max(6, int(0.15 * max(w, h)))
+    x, y = x - pad, y - pad
+    w, h = w + 2 * pad, h + 2 * pad
 
-    delogo = f"delogo=x={x}:y={y}:w={w}:h={h}:show=0"
+    # Only the box itself needs to be a valid region of the frame - unlike
+    # delogo, a plain blur doesn't need surrounding context pixels, so it
+    # works right up against a frame edge (very common for corner badges).
+    frame_w, frame_h = await get_video_dimensions(cfg, input_path)
+    x = max(0, min(x, frame_w - 1))
+    y = max(0, min(y, frame_h - 1))
+    w = max(2, min(w, frame_w - x))
+    h = max(2, min(h, frame_h - y))
+
+    # Heavily blur just the watermark's box and paste it back over the
+    # original frame - the rest of the picture is untouched pixel-for-pixel,
+    # and the blurred patch makes any text in it unreadable without trying
+    # (and risking failing) to reconstruct what's underneath.
+    blur = (
+        f"split[main][wm];"
+        f"[wm]crop={w}:{h}:{x}:{y},boxblur=20:4[blurred];"
+        f"[main][blurred]overlay={x}:{y}"
+    )
 
     if cfg.use_gpu:
         # Decode on CPU (cheap relative to encode) to sidestep flaky
         # hwdownload/nvdec format negotiation across ffmpeg builds; still get
         # the GPU speedup where it matters most, on the encode side.
-        vf = f"{delogo},format=nv12,hwupload_cuda"
+        vf = f"{blur},format=nv12,hwupload_cuda"
         cmd = [
             cfg.ffmpeg_bin, "-y",
             "-i", input_path,
@@ -90,7 +104,7 @@ async def clean_watermark(
     else:
         cmd = [
             cfg.ffmpeg_bin, "-y", "-i", input_path,
-            "-vf", delogo,
+            "-vf", blur,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-c:a", "copy",
             output_path,
