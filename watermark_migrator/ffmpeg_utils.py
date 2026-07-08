@@ -49,10 +49,12 @@ async def clean_watermark(
     delogo = f"delogo=x={x}:y={y}:w={w}:h={h}:show=0"
 
     if cfg.use_gpu:
-        vf = f"hwdownload,format=yuv420p,{delogo},format=nv12,hwupload_cuda"
+        # Decode on CPU (cheap relative to encode) to sidestep flaky
+        # hwdownload/nvdec format negotiation across ffmpeg builds; still get
+        # the GPU speedup where it matters most, on the encode side.
+        vf = f"{delogo},format=nv12,hwupload_cuda"
         cmd = [
             cfg.ffmpeg_bin, "-y",
-            "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
             "-i", input_path,
             "-vf", vf,
             "-c:v", "h264_nvenc", "-preset", cfg.nvenc_preset,
