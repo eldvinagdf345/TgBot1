@@ -87,11 +87,35 @@ async def clean_watermark(
         f"[main][blurred]overlay={x}:{y}"
     )
 
+    # On top of the blur, stamp two rows of filler symbols in the same spot,
+    # at the configured color/opacity - reads as a (garbled) replacement
+    # watermark rather than an obviously-edited blur patch.
+    fontsize = max(10, int(h / 2.6))
+    row_gap = 2
+    row1_y = y + max(2, (h - 2 * fontsize - row_gap) // 2)
+    row2_y = row1_y + fontsize + row_gap
+    text = (
+        cfg.mask_text.replace("\\", "\\\\")
+        .replace(":", "\\:")
+        .replace("'", "\\'")
+        .replace("%", "%%")
+    )
+    fontfile_arg = f"fontfile='{cfg.font_file}':" if cfg.font_file else ""
+    color_spec = f"{cfg.font_color}@{cfg.font_opacity}"
+
+    def _drawtext(row_y: int) -> str:
+        return (
+            f"drawtext={fontfile_arg}text='{text}':"
+            f"x={x + 4}:y={row_y}:fontsize={fontsize}:fontcolor={color_spec}"
+        )
+
+    mask = f"{blur},{_drawtext(row1_y)},{_drawtext(row2_y)}"
+
     if cfg.use_gpu:
         # Decode on CPU (cheap relative to encode) to sidestep flaky
         # hwdownload/nvdec format negotiation across ffmpeg builds; still get
         # the GPU speedup where it matters most, on the encode side.
-        vf = f"{blur},format=nv12,hwupload_cuda"
+        vf = f"{mask},format=nv12,hwupload_cuda"
         cmd = [
             cfg.ffmpeg_bin, "-y",
             "-i", input_path,
@@ -104,7 +128,7 @@ async def clean_watermark(
     else:
         cmd = [
             cfg.ffmpeg_bin, "-y", "-i", input_path,
-            "-vf", blur,
+            "-vf", mask,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-c:a", "copy",
             output_path,

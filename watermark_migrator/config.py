@@ -27,6 +27,10 @@ class Config:
     concurrency: int
     nvenc_preset: str
     nvenc_cq: int
+    mask_text: str
+    font_file: str
+    font_color: str
+    font_opacity: float
 
 
 def load_config() -> Config:
@@ -55,4 +59,8 @@ def load_config() -> Config:
         concurrency=int(os.environ.get("CONCURRENCY", "2")),
         nvenc_preset=os.environ.get("NVENC_PRESET", "p4"),
         nvenc_cq=int(os.environ.get("NVENC_CQ", "19")),
+        mask_text=os.environ.get("MASK_TEXT", "@#&@#%"),
+        font_file=os.environ.get("FONT_FILE", ""),
+        font_color=os.environ.get("FONT_COLOR", "white"),
+        font_opacity=float(os.environ.get("FONT_OPACITY", "0.85")),
     )
