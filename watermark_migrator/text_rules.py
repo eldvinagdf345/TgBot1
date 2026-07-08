@@ -38,10 +38,30 @@ def sanitize_text(text: str | None, terms: list[str]) -> str:
 
 
 def sanitized_filename(
-    original_name: str | None, terms: list[str], message_id: int, replacement: str = "Prime Sector"
+    original_name: str | None,
+    terms: list[str],
+    message_id: int,
+    replacement: str = "Prime Sector",
+    force_ext: str | None = None,
 ) -> str:
+    """
+    force_ext should be set (e.g. "mp4") only when the file's actual bytes were
+    re-encoded into that container by us - otherwise the extension is taken
+    from original_name so passed-through files (photos, voice, documents,
+    untouched videos) keep a name that matches their real format.
+    """
+    if force_ext:
+        ext = force_ext.lstrip(".")
+    elif original_name and "." in original_name:
+        ext = original_name.rsplit(".", 1)[-1]
+    else:
+        ext = None
+
     if contains_brand_term(original_name, terms):
-        return f"{replacement}.mp4"
-    if original_name:
-        return original_name
-    return f"video_{message_id}.mp4"
+        base = replacement
+    elif original_name:
+        base = original_name.rsplit(".", 1)[0] if "." in original_name else original_name
+    else:
+        base = f"file_{message_id}"
+
+    return f"{base}.{ext}" if ext else base

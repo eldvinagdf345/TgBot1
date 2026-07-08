@@ -2,33 +2,60 @@ import asyncio
 import logging
 import os
 import shutil
+from dataclasses import dataclass
 
 from .config import Config, load_config
 from .db import StateDB, open_db
 from .detector import detect_watermark
 from .ffmpeg_utils import clean_watermark, extract_sample_frames
-from .telegram_io import download_video, iter_source_videos, make_client, upload_video
+from .telegram_io import (
+    download_media,
+    download_media_auto,
+    iter_source_messages,
+    make_client,
+    upload_message,
+)
 from .text_rules import load_brand_terms, sanitize_text, sanitized_filename
 
 logger = logging.getLogger("watermark_migrator")
 
 
-async def _process_one(cfg: Config, client, db: StateDB, msg) -> str | None:
-    """Download, detect, clean (if needed). Returns path to the file ready for upload,
-    or None if this message was already fully handled in a previous run."""
+@dataclass
+class ProcessResult:
+    skip: bool  # True => already handled in a previous run, or errored this run; nothing to publish
+    media_path: str | None  # local file ready for upload, or None for a text-only message
+    transcoded: bool  # True => media_path was re-encoded by us (force the .mp4 extension)
+
+
+async def _process_one(cfg: Config, client, db: StateDB, msg) -> ProcessResult:
+    """Download, and for videos detect+clean if a watermark is found. Every
+    other message type (photo, voice, document, plain text) passes through
+    untouched."""
     message_id = msg.id
 
     if db.is_done(message_id):
-        return None
+        return ProcessResult(skip=True, media_path=None, transcoded=False)
 
     job_dir = os.path.join(cfg.work_dir, str(message_id))
     os.makedirs(job_dir, exist_ok=True)
-    raw_path = os.path.join(job_dir, "raw.mp4")
-    clean_path = os.path.join(job_dir, "clean.mp4")
 
     try:
+        if msg.video is None:
+            if msg.media is None:
+                db.upsert_status(message_id, "uploading", watermark_found=0)
+                return ProcessResult(skip=False, media_path=None, transcoded=False)
+
+            db.upsert_status(message_id, "downloading")
+            media_dir = os.path.join(job_dir, "media")
+            downloaded = await download_media_auto(client, msg, media_dir)
+            db.upsert_status(message_id, "uploading", watermark_found=0)
+            return ProcessResult(skip=False, media_path=downloaded, transcoded=False)
+
+        raw_path = os.path.join(job_dir, "raw.mp4")
+        clean_path = os.path.join(job_dir, "clean.mp4")
+
         db.upsert_status(message_id, "downloading")
-        await download_video(client, msg, raw_path)
+        await download_media(client, msg, raw_path)
 
         db.upsert_status(message_id, "detecting")
         frame_dir = os.path.join(job_dir, "frames")
@@ -39,7 +66,7 @@ async def _process_one(cfg: Config, client, db: StateDB, msg) -> str | None:
 
         if bbox is None:
             db.upsert_status(message_id, "uploading", watermark_found=0)
-            return raw_path
+            return ProcessResult(skip=False, media_path=raw_path, transcoded=False)
 
         x, y, w, h = bbox
         db.upsert_status(
@@ -49,12 +76,12 @@ async def _process_one(cfg: Config, client, db: StateDB, msg) -> str | None:
         await clean_watermark(cfg, raw_path, clean_path, bbox)
         os.remove(raw_path)
         db.upsert_status(message_id, "uploading")
-        return clean_path
+        return ProcessResult(skip=False, media_path=clean_path, transcoded=True)
 
     except Exception as e:
         logger.exception(f"message {message_id} failed")
         db.upsert_status(message_id, "error", error=str(e))
-        return None
+        return ProcessResult(skip=True, media_path=None, transcoded=False)
 
 
 async def run(cfg: Config | None = None) -> None:
@@ -68,19 +95,19 @@ async def run(cfg: Config | None = None) -> None:
         client = make_client(cfg)
         await client.start()
 
-        logger.info("Fetching video message list from source channel...")
-        messages = [msg async for msg in iter_source_videos(client, cfg.source_channel)]
-        logger.info(f"Found {len(messages)} videos to process")
+        logger.info("Fetching message list from source channel...")
+        messages = [msg async for msg in iter_source_messages(client, cfg.source_channel)]
+        logger.info(f"Found {len(messages)} messages to process")
 
         sem = asyncio.Semaphore(cfg.concurrency)
-        results: dict[int, str | None] = {}
+        results: dict[int, ProcessResult] = {}
         ready = asyncio.Condition()
 
         async def worker(pos: int, msg):
             async with sem:
-                path = await _process_one(cfg, client, db, msg)
+                result = await _process_one(cfg, client, db, msg)
             async with ready:
-                results[pos] = path
+                results[pos] = result
                 ready.notify_all()
 
         async def publisher():
@@ -89,19 +116,22 @@ async def run(cfg: Config | None = None) -> None:
             while next_pos < total:
                 async with ready:
                     await ready.wait_for(lambda: next_pos in results)
-                    path = results.pop(next_pos)
+                    result = results.pop(next_pos)
                 msg = messages[next_pos]
-                if path is not None:
+                if not result.skip:
                     try:
-                        original_name = msg.file.name if msg.file else None
-                        target_name = sanitized_filename(original_name, brand_terms, msg.id)
-                        final_path = os.path.join(os.path.dirname(path), target_name)
-                        if final_path != path:
-                            os.rename(path, final_path)
+                        final_path = result.media_path
+                        if final_path:
+                            original_name = msg.file.name if msg.file else None
+                            force_ext = "mp4" if result.transcoded else None
+                            target_name = sanitized_filename(
+                                original_name, brand_terms, msg.id, force_ext=force_ext
+                            )
+                            final_path = os.path.join(os.path.dirname(result.media_path), target_name)
+                            if final_path != result.media_path:
+                                os.rename(result.media_path, final_path)
                         caption = sanitize_text(msg.message, brand_terms)
-                        await upload_video(
-                            client, cfg.target_channel, final_path, caption
-                        )
+                        await upload_message(client, cfg.target_channel, final_path, caption)
                         db.upsert_status(msg.id, "done")
                     except Exception as e:
                         logger.exception(f"upload failed for message {msg.id}")
