@@ -1,82 +1,77 @@
 """
-Manual placement mode: you drag/resize the overlay sticker over a preview
-frame of each video yourself, click "Готово", and the program burns it in
-at exactly that spot for the whole video and uploads the result to
-TARGET_CHANNEL - then automatically loads the next unprocessed video.
+Minimal manual editor - exactly 3 actions:
+  1. Выбрать файл (photo or video, from your computer)
+  2. Добавить знак (drops in the one fixed overlay image - drag/resize it
+     onto the watermark by hand)
+  3. Готово (burns it in and sends the result to TARGET_CHANNEL)
 
 Usage:
     python -m watermark_migrator.manual_gui
 """
 import asyncio
 import os
-import shutil
+import tempfile
 import threading
 import tkinter as tk
+from tkinter import filedialog
 
 from PIL import Image, ImageTk
 
-from .config import Config, load_config, prompt_for_channels
-from .db import StateDB
-from .ffmpeg_utils import _run, clean_watermark, get_duration, get_video_dimensions
-from .pipeline import ProcessResult, publish_one
-from .telegram_io import download_media, iter_source_messages, make_client
-from .text_rules import load_brand_terms
+from .config import Config, load_config
+from .ffmpeg_utils import _run, get_duration, get_video_dimensions
+from .telegram_io import make_client, upload_message
 
 PREVIEW_MAX_W = 960
 PREVIEW_MAX_H = 600
 
+VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
 
-class ManualOverlayApp:
+
+class SimpleOverlayApp:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self.brand_terms = load_brand_terms(cfg.brand_terms_path)
-        self.db = StateDB(cfg.db_path)
-
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self._loop_thread, daemon=True).start()
-
         self.client = None
-        self.messages: list = []
-        self.msg_pos = 0
+
+        self.file_path = None
+        self.is_video = False
+        self.scale = 1.0
+        self.overlay_pil = Image.open(cfg.overlay_image).convert("RGBA")
+        self.overlay_box = [20, 20, 160, 80]  # x, y, w, h in canvas pixels
+        self._drag = {"x": 0, "y": 0}
         self.busy = False
 
-        self.video_path = None
-        self.scale = 1.0
-        self.overlay_pil = None
-        self.overlay_box = [20, 20, 160, 80]  # x, y, w, h in *canvas* pixels
-        self._drag = {"x": 0, "y": 0}
-
         self.root = tk.Tk()
-        self.root.title("Ручное наложение стикера")
+        self.root.title("Наложение знака")
 
         self.status_var = tk.StringVar(value="Подключение к Telegram...")
         tk.Label(self.root, textvariable=self.status_var, anchor="w").pack(fill="x", padx=8, pady=4)
 
         self.canvas = tk.Canvas(self.root, width=PREVIEW_MAX_W, height=PREVIEW_MAX_H, bg="#222")
         self.canvas.pack(padx=8, pady=4)
-        self.canvas.bind("<MouseWheel>", self._on_wheel)       # Windows/macOS
-        self.canvas.bind("<Button-4>", lambda e: self._resize(1.1))   # Linux scroll up
-        self.canvas.bind("<Button-5>", lambda e: self._resize(0.9))   # Linux scroll down
+        self.canvas.bind("<MouseWheel>", self._on_wheel)
+        self.canvas.bind("<Button-4>", lambda e: self._resize(1.1))
+        self.canvas.bind("<Button-5>", lambda e: self._resize(0.9))
 
-        btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=8)
-        self.done_btn = tk.Button(
-            btn_frame, text="✅ Готово (наложить и отправить)", command=self.on_done
-        )
+        btns = tk.Frame(self.root)
+        btns.pack(pady=8)
+        self.choose_btn = tk.Button(btns, text="📂 Выбрать файл", command=self.on_choose, state="disabled")
+        self.choose_btn.pack(side="left", padx=4)
+        self.mark_btn = tk.Button(btns, text="➕ Добавить знак", command=self.on_add_mark, state="disabled")
+        self.mark_btn.pack(side="left", padx=4)
+        self.done_btn = tk.Button(btns, text="✅ Готово (отправить)", command=self.on_done, state="disabled")
         self.done_btn.pack(side="left", padx=4)
-        self.skip_btn = tk.Button(btn_frame, text="⏭ Пропустить", command=self.on_skip)
-        self.skip_btn.pack(side="left", padx=4)
+
         tk.Label(
-            self.root,
-            text="Тащите стикер мышкой, крутите колёсико чтобы изменить размер.",
+            self.root, text="После 'Добавить знак': тащите мышкой, колёсико - размер."
         ).pack(pady=(0, 6))
 
-        self.bg_image_id = None
         self.bg_photo = None
-        self.overlay_id = None
         self.overlay_photo = None
+        self.overlay_id = None
 
-        self._run_async(self._startup())
+        self._run_async(self._connect())
         self.root.mainloop()
 
     # ---------------- asyncio plumbing ----------------
@@ -92,69 +87,80 @@ class ManualOverlayApp:
 
     def _set_busy(self, busy: bool):
         self.busy = busy
-        state = "disabled" if busy else "normal"
-        self.root.after(0, lambda: (self.done_btn.config(state=state), self.skip_btn.config(state=state)))
 
-    # ---------------- startup / queue ----------------
-    async def _startup(self):
+        def _apply():
+            state = "disabled" if busy else "normal"
+            self.choose_btn.config(state=state)
+            self.mark_btn.config(state=state if self.file_path else "disabled")
+            self.done_btn.config(state=state if self.overlay_id else "disabled")
+
+        self.root.after(0, _apply)
+
+    async def _connect(self):
         self.client = make_client(self.cfg)
         await self.client.start()
-        self._set_status("Загружаю список видео из канала-источника...")
-        self.messages = [
-            m async for m in iter_source_messages(self.client, self.cfg.source_channel)
-            if m.video is not None
-        ]
-        self.root.after(0, self._advance)
+        self._set_status("Готово. Выберите файл.")
+        self.root.after(0, lambda: self.choose_btn.config(state="normal"))
 
-    def _advance(self):
-        while self.msg_pos < len(self.messages) and self.db.is_done(self.messages[self.msg_pos].id):
-            self.msg_pos += 1
-        if self.msg_pos >= len(self.messages):
-            self.status_var.set("Готово - необработанных видео больше нет.")
+    # ---------------- 1. choose file ----------------
+    def on_choose(self):
+        if self.busy:
             return
+        path = filedialog.askopenfilename(
+            title="Выберите фото или видео",
+            filetypes=[
+                ("Видео и фото", "*.mp4 *.mov *.mkv *.avi *.webm *.jpg *.jpeg *.png *.bmp *.webp"),
+                ("Все файлы", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        self.file_path = path
+        self.is_video = os.path.splitext(path)[1].lower() in VIDEO_EXTS
+        self.overlay_id = None
+        self._set_status("Загружаю превью...")
         self._set_busy(True)
-        self._set_status(f"Скачиваю видео {self.msg_pos + 1}/{len(self.messages)}...")
-        self._run_async(self._load_current())
+        self._run_async(self._load_preview())
 
-    async def _load_current(self):
-        msg = self.messages[self.msg_pos]
-        job_dir = os.path.join(self.cfg.work_dir, str(msg.id))
-        os.makedirs(job_dir, exist_ok=True)
-        raw_path = os.path.join(job_dir, "raw.mp4")
+    async def _load_preview(self):
         try:
-            await download_media(self.client, msg, raw_path)
-            duration = await get_duration(self.cfg, raw_path)
-            frame_path = os.path.join(job_dir, "preview.jpg")
-            await _run([
-                self.cfg.ffmpeg_bin, "-y", "-ss", f"{duration / 2:.2f}", "-i", raw_path,
-                "-frames:v", "1", "-q:v", "2", frame_path,
-            ])
-            self.video_path = raw_path
+            if self.is_video:
+                duration = await get_duration(self.cfg, self.file_path)
+                frame_path = os.path.join(tempfile.gettempdir(), "wm_preview.jpg")
+                await _run([
+                    self.cfg.ffmpeg_bin, "-y", "-ss", f"{duration / 2:.2f}",
+                    "-i", self.file_path, "-frames:v", "1", "-q:v", "2", frame_path,
+                ])
+                preview_path = frame_path
+            else:
+                preview_path = self.file_path
         except Exception as e:
-            self._set_status(f"Ошибка загрузки: {e}")
+            self._set_status(f"Ошибка чтения файла: {e}")
             self._set_busy(False)
             return
-        self.root.after(0, lambda: self._show_preview(frame_path))
+        self.root.after(0, lambda: self._show_preview(preview_path))
 
-    # ---------------- preview / overlay ----------------
-    def _show_preview(self, frame_path: str):
-        img = Image.open(frame_path)
+    def _show_preview(self, preview_path: str):
+        img = Image.open(preview_path)
         scale = min(PREVIEW_MAX_W / img.width, PREVIEW_MAX_H / img.height, 1.0)
         self.scale = scale
         disp = img.resize((max(1, int(img.width * scale)), max(1, int(img.height * scale))))
         self.bg_photo = ImageTk.PhotoImage(disp)
         self.canvas.delete("all")
         self.canvas.config(width=disp.width, height=disp.height)
-        self.bg_image_id = self.canvas.create_image(0, 0, anchor="nw", image=self.bg_photo)
-
-        self.overlay_pil = Image.open(self.cfg.overlay_image).convert("RGBA")
-        if self.overlay_box[2] <= 0:
-            self.overlay_box = [20, 20, 160, 80]
-        self._redraw_overlay()
-        self._set_status(
-            f"Видео {self.msg_pos + 1}/{len(self.messages)} - разместите стикер и нажмите Готово"
-        )
+        self.canvas.create_image(0, 0, anchor="nw", image=self.bg_photo)
+        self._set_status("Файл загружен. Нажмите 'Добавить знак'.")
         self._set_busy(False)
+        self.root.after(0, lambda: self.mark_btn.config(state="normal"))
+
+    # ---------------- 2. add mark ----------------
+    def on_add_mark(self):
+        if self.busy or not self.file_path:
+            return
+        self.overlay_box = [20, 20, 160, 80]
+        self._redraw_overlay()
+        self._set_status("Перетащите знак на место, колёсико меняет размер, затем 'Готово'.")
+        self.done_btn.config(state="normal")
 
     def _redraw_overlay(self):
         x, y, w, h = self.overlay_box
@@ -181,6 +187,8 @@ class ManualOverlayApp:
         self._resize(1.1 if event.delta > 0 else 0.9)
 
     def _resize(self, factor: float):
+        if self.overlay_id is None:
+            return
         cx = self.overlay_box[0] + self.overlay_box[2] / 2
         cy = self.overlay_box[1] + self.overlay_box[3] / 2
         self.overlay_box[2] *= factor
@@ -189,54 +197,95 @@ class ManualOverlayApp:
         self.overlay_box[1] = cy - self.overlay_box[3] / 2
         self._redraw_overlay()
 
-    # ---------------- actions ----------------
-    def on_skip(self):
-        if self.busy:
-            return
-        msg = self.messages[self.msg_pos]
-        shutil.rmtree(os.path.join(self.cfg.work_dir, str(msg.id)), ignore_errors=True)
-        self.msg_pos += 1
-        self._advance()
-
+    # ---------------- 3. done ----------------
     def on_done(self):
-        if self.busy:
+        if self.busy or not self.file_path or self.overlay_id is None:
             return
         x, y, w, h = self.overlay_box
-        real_bbox = (
+        bbox = (
             int(x / self.scale), int(y / self.scale),
             int(w / self.scale), int(h / self.scale),
         )
         self._set_busy(True)
-        self._set_status("Накладываю и заливаю в канал...")
-        self._run_async(self._process_and_upload(real_bbox))
+        self._set_status("Накладываю и отправляю...")
+        self._run_async(self._process_and_send(bbox))
 
-    async def _process_and_upload(self, bbox: tuple[int, int, int, int]):
-        msg = self.messages[self.msg_pos]
-        job_dir = os.path.join(self.cfg.work_dir, str(msg.id))
-        clean_path = os.path.join(job_dir, "clean.mp4")
+    async def _process_and_send(self, bbox: tuple[int, int, int, int]):
+        ext = ".mp4" if self.is_video else (os.path.splitext(self.file_path)[1] or ".png")
+        out_path = os.path.join(tempfile.gettempdir(), f"wm_output{ext}")
         try:
-            await clean_watermark(self.cfg, self.video_path, clean_path, bbox)
-            os.remove(self.video_path)
-            result = ProcessResult(skip=False, media_path=clean_path, transcoded=True, is_video=True)
-            await publish_one(self.cfg, self.client, self.db, self.brand_terms, msg, result)
+            if self.is_video:
+                await self._burn_video(self.file_path, out_path, bbox)
+            else:
+                self._burn_image(self.file_path, out_path, bbox)
+            await upload_message(self.client, self.cfg.target_channel, out_path, "")
         except Exception as e:
-            self.db.upsert_status(msg.id, "error", error=str(e))
             self._set_status(f"Ошибка: {e}")
             self._set_busy(False)
             return
-        self.msg_pos += 1
-        self.root.after(0, self._advance)
+        self._set_status("Отправлено! Выберите следующий файл.")
+        self.file_path = None
+        self.overlay_id = None
+        self.root.after(0, lambda: self.canvas.delete("all"))
+        self._set_busy(False)
+
+    async def _burn_video(self, input_path: str, output_path: str, bbox: tuple[int, int, int, int]) -> None:
+        x, y, w, h = bbox
+        frame_w, frame_h = await get_video_dimensions(self.cfg, input_path)
+        x = max(0, min(x, frame_w - 1))
+        y = max(0, min(y, frame_h - 1))
+        w = max(2, min(w, frame_w - x))
+        h = max(2, min(h, frame_h - y))
+        graph = (
+            f"[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[badge];"
+            f"[0:v][badge]overlay={x}:{y}[outv]"
+        )
+        cmd = [
+            self.cfg.ffmpeg_bin, "-y",
+            "-i", input_path, "-i", self.cfg.overlay_image,
+            "-filter_complex", graph, "-map", "[outv]", "-map", "0:a?",
+        ]
+        if self.cfg.use_gpu:
+            cmd += [
+                "-c:v", "h264_nvenc", "-preset", self.cfg.nvenc_preset,
+                "-rc", "vbr", "-cq", str(self.cfg.nvenc_cq),
+            ]
+        else:
+            cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
+        cmd += ["-c:a", "copy", output_path]
+
+        code, _, err = await _run(cmd)
+        if code != 0:
+            raise RuntimeError(err.decode(errors="ignore")[-2000:])
+
+    def _burn_image(self, input_path: str, output_path: str, bbox: tuple[int, int, int, int]) -> None:
+        x, y, w, h = bbox
+        base = Image.open(input_path).convert("RGBA")
+        w = max(1, min(w, base.width - x))
+        h = max(1, min(h, base.height - y))
+        sticker = self.overlay_pil.resize((w, h))
+        base.paste(sticker, (x, y), sticker)
+        base.convert("RGB").save(output_path)
+
+
+def _prompt_target_channel(cfg: Config) -> None:
+    tgt = input(f"Канал-приёмник [{cfg.target_channel or 'не задан'}]: ").strip()
+    if tgt:
+        cfg.target_channel = tgt
+    if not cfg.target_channel:
+        raise SystemExit("Канал-приёмник не указан.")
 
 
 def main():
     cfg = load_config()
-    prompt_for_channels(cfg)
+    _prompt_target_channel(cfg)
     if not cfg.overlay_image:
         raise SystemExit(
-            "OVERLAY_IMAGE не задан в .env - укажите путь к PNG со стикером, "
+            "OVERLAY_IMAGE не задан в .env - укажите путь к PNG со знаком, "
             "который будете накладывать."
         )
-    ManualOverlayApp(cfg)
+    SimpleOverlayApp(cfg)
 
 
 if __name__ == "__main__":
