@@ -64,7 +64,9 @@ def load_config() -> Config:
         font_file=os.environ.get("FONT_FILE", ""),
         font_color=os.environ.get("FONT_COLOR", "white"),
         font_opacity=float(os.environ.get("FONT_OPACITY", "0.85")),
-        overlay_image=os.environ.get("OVERLAY_IMAGE", ""),
+        overlay_image=os.environ.get(
+            "OVERLAY_IMAGE", "watermark_migrator/assets/default_mark.png"
+        ),
     )
 
 
