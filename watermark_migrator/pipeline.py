@@ -85,6 +85,40 @@ async def _process_one(cfg: Config, client, db: StateDB, msg) -> ProcessResult:
         return ProcessResult(skip=True, media_path=None, transcoded=False)
 
 
+async def publish_one(
+    cfg: Config, client, db: StateDB, brand_terms: list[str], msg, result: ProcessResult
+) -> None:
+    """Rename/attach attributes as needed and upload one processed message,
+    then mark it done (or error) in the state db. Shared by the historical
+    batch run and the live watcher."""
+    if result.skip:
+        return
+    try:
+        final_path = result.media_path
+        if final_path:
+            original_name = msg.file.name if msg.file else None
+            force_ext = "mp4" if result.transcoded else None
+            target_name = sanitized_filename(
+                original_name, brand_terms, msg.id, force_ext=force_ext
+            )
+            final_path = os.path.join(os.path.dirname(result.media_path), target_name)
+            if final_path != result.media_path:
+                os.rename(result.media_path, final_path)
+        video_attrs = None
+        if result.is_video and final_path:
+            duration = await get_duration(cfg, final_path)
+            width, height = await get_video_dimensions(cfg, final_path)
+            video_attrs = (duration, width, height)
+        caption = sanitize_text(msg.message, brand_terms)
+        await upload_message(client, cfg.target_channel, final_path, caption, video_attrs)
+        db.upsert_status(msg.id, "done")
+    except Exception as e:
+        logger.exception(f"upload failed for message {msg.id}")
+        db.upsert_status(msg.id, "error", error=str(e))
+    finally:
+        shutil.rmtree(os.path.join(cfg.work_dir, str(msg.id)), ignore_errors=True)
+
+
 async def run(cfg: Config | None = None) -> None:
     cfg = cfg or load_config()
     os.makedirs(cfg.work_dir, exist_ok=True)
@@ -119,33 +153,7 @@ async def run(cfg: Config | None = None) -> None:
                     await ready.wait_for(lambda: next_pos in results)
                     result = results.pop(next_pos)
                 msg = messages[next_pos]
-                if not result.skip:
-                    try:
-                        final_path = result.media_path
-                        if final_path:
-                            original_name = msg.file.name if msg.file else None
-                            force_ext = "mp4" if result.transcoded else None
-                            target_name = sanitized_filename(
-                                original_name, brand_terms, msg.id, force_ext=force_ext
-                            )
-                            final_path = os.path.join(os.path.dirname(result.media_path), target_name)
-                            if final_path != result.media_path:
-                                os.rename(result.media_path, final_path)
-                        video_attrs = None
-                        if result.is_video and final_path:
-                            duration = await get_duration(cfg, final_path)
-                            width, height = await get_video_dimensions(cfg, final_path)
-                            video_attrs = (duration, width, height)
-                        caption = sanitize_text(msg.message, brand_terms)
-                        await upload_message(
-                            client, cfg.target_channel, final_path, caption, video_attrs
-                        )
-                        db.upsert_status(msg.id, "done")
-                    except Exception as e:
-                        logger.exception(f"upload failed for message {msg.id}")
-                        db.upsert_status(msg.id, "error", error=str(e))
-                    finally:
-                        shutil.rmtree(os.path.join(cfg.work_dir, str(msg.id)), ignore_errors=True)
+                await publish_one(cfg, client, db, brand_terms, msg, result)
                 next_pos += 1
                 if next_pos % 25 == 0:
                     logger.info(f"Progress: {next_pos}/{total}")
