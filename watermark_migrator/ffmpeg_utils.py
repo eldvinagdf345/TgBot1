@@ -115,6 +115,13 @@ async def clean_watermark(
     y = max(0, min(y, frame_h - 1))
     w = max(2, min(w, frame_w - x))
     h = max(2, min(h, frame_h - y))
+    # scale/pad (used when OVERLAY_IMAGE is set) need even dimensions,
+    # otherwise libswscale's rounding can make the scaled output 1px larger
+    # than the pad target and ffmpeg refuses with "Padded dimensions cannot
+    # be smaller than input dimensions".
+    w -= w % 2
+    h -= h % 2
+    w, h = max(2, w), max(2, h)
 
     # Heavily blur just the watermark's box and paste it back over the
     # original frame - the rest of the picture is untouched pixel-for-pixel,

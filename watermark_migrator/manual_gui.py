@@ -26,7 +26,8 @@ from .telegram_io import make_client, upload_message
 
 PREVIEW_MAX_W = 960
 PREVIEW_MAX_H = 600
-HANDLE_SIZE = 14
+HANDLE_R = 11  # corner grab-circle radius, in canvas pixels
+MIN_BOX = 30
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
 
@@ -133,14 +134,14 @@ class SimpleOverlayApp:
         self.done_btn.pack(side="left", padx=6)
 
         tk.Label(
-            self.root, text="Тащите знак мышкой за середину. Тащите за нижний-правый уголок, чтобы изменить размер.",
+            self.root, text="Тащите знак за середину, чтобы двигать. Тащите любой кружок по углам, чтобы менять размер.",
             bg=BG, fg=MUTED, font=FONT,
         ).pack(pady=(0, 14))
 
         self.bg_photo = None
         self.overlay_photo = None
         self.overlay_id = None
-        self.handle_id = None
+        self._selection_items: list = []
 
         self._run_async(self._connect())
         self.root.mainloop()
@@ -219,7 +220,6 @@ class SimpleOverlayApp:
         self.file_path = path
         self.is_video = os.path.splitext(path)[1].lower() in VIDEO_EXTS
         self.overlay_id = None
-        self.handle_id = None
         self._set_status("Загружаю превью...")
         self._set_busy(True)
         self._run_async(self._load_preview())
@@ -255,38 +255,48 @@ class SimpleOverlayApp:
         self._set_busy(False)
         self.root.after(0, lambda: self.mark_btn.config(state="normal"))
 
-    # ---------------- 2. add mark (drag + resize handle) ----------------
+    # ---------------- 2. add mark (drag + corner-handle resize) ----------------
     def on_add_mark(self):
         if self.busy or not self.file_path:
             return
-        self.overlay_box = [20, 20, 160, 80]
+        w, h = 220, int(220 * self.overlay_pil.height / self.overlay_pil.width)
+        self.overlay_box = [30, 30, w, h]
         self._redraw_overlay()
-        self._set_status("Разместите знак: тащите за середину (двигать) или за уголок (размер), затем 'Готово'.")
+        self._set_status("Тащите знак за середину (двигать) или за кружок в углу (размер), затем 'Готово'.")
         self.done_btn.config(state="normal")
 
     def _redraw_overlay(self):
         x, y, w, h = self.overlay_box
-        w, h = max(HANDLE_SIZE * 2, int(w)), max(HANDLE_SIZE * 2, int(h))
-        self.overlay_box[2], self.overlay_box[3] = w, h
-        resized = self.overlay_pil.resize((w, h))
-        self.overlay_photo = ImageTk.PhotoImage(resized)
+        w, h = max(MIN_BOX, int(w)), max(MIN_BOX, int(h))
+        self.overlay_box = [x, y, w, h]
 
+        for item_id in self._selection_items:
+            self.canvas.delete(item_id)
+        self._selection_items = []
         if self.overlay_id:
             self.canvas.delete(self.overlay_id)
-        if self.handle_id:
-            self.canvas.delete(self.handle_id)
 
+        resized = self.overlay_pil.resize((w, h))
+        self.overlay_photo = ImageTk.PhotoImage(resized)
         self.overlay_id = self.canvas.create_image(int(x), int(y), anchor="nw", image=self.overlay_photo)
-        hx, hy = x + w - HANDLE_SIZE, y + h - HANDLE_SIZE
-        self.handle_id = self.canvas.create_rectangle(
-            hx, hy, hx + HANDLE_SIZE, hy + HANDLE_SIZE,
-            fill=ACCENT, outline="white",
-        )
-
         self.canvas.tag_bind(self.overlay_id, "<ButtonPress-1>", self._on_move_press)
         self.canvas.tag_bind(self.overlay_id, "<B1-Motion>", self._on_move_drag)
-        self.canvas.tag_bind(self.handle_id, "<ButtonPress-1>", self._on_resize_press)
-        self.canvas.tag_bind(self.handle_id, "<B1-Motion>", self._on_resize_drag)
+
+        # CapCut-style selection: dashed outline + a big grab-circle on each corner
+        outline_id = self.canvas.create_rectangle(
+            x, y, x + w, y + h, outline=ACCENT, width=2, dash=(6, 4)
+        )
+        self._selection_items.append(outline_id)
+
+        corners = {"tl": (x, y), "tr": (x + w, y), "bl": (x, y + h), "br": (x + w, y + h)}
+        for corner, (cx, cy) in corners.items():
+            hid = self.canvas.create_oval(
+                cx - HANDLE_R, cy - HANDLE_R, cx + HANDLE_R, cy + HANDLE_R,
+                fill="#22d3ee", outline="white", width=2,
+            )
+            self.canvas.tag_bind(hid, "<ButtonPress-1>", lambda e, c=corner: self._on_resize_press(e, c))
+            self.canvas.tag_bind(hid, "<B1-Motion>", self._on_resize_drag)
+            self._selection_items.append(hid)
 
     def _on_move_press(self, event):
         self._drag = {"mode": "move", "x": event.x, "y": event.y}
@@ -298,13 +308,22 @@ class SimpleOverlayApp:
         self._drag["x"], self._drag["y"] = event.x, event.y
         self._redraw_overlay()
 
-    def _on_resize_press(self, event):
-        self._drag = {"mode": "resize", "x": event.x, "y": event.y}
+    def _on_resize_press(self, event, corner: str):
+        self._drag = {"mode": "resize", "corner": corner, "x": event.x, "y": event.y}
 
     def _on_resize_drag(self, event):
         dx, dy = event.x - self._drag["x"], event.y - self._drag["y"]
-        self.overlay_box[2] = max(HANDLE_SIZE * 2, self.overlay_box[2] + dx)
-        self.overlay_box[3] = max(HANDLE_SIZE * 2, self.overlay_box[3] + dy)
+        x, y, w, h = self.overlay_box
+        corner = self._drag["corner"]
+        if corner == "br":
+            w += dx; h += dy
+        elif corner == "bl":
+            x += dx; w -= dx; h += dy
+        elif corner == "tr":
+            y += dy; w += dx; h -= dy
+        elif corner == "tl":
+            x += dx; y += dy; w -= dx; h -= dy
+        self.overlay_box = [x, y, max(MIN_BOX, w), max(MIN_BOX, h)]
         self._drag["x"], self._drag["y"] = event.x, event.y
         self._redraw_overlay()
 
@@ -347,6 +366,13 @@ class SimpleOverlayApp:
         y = max(0, min(y, frame_h - 1))
         w = max(2, min(w, frame_w - x))
         h = max(2, min(h, frame_h - y))
+        # scale/pad need even dimensions, otherwise libswscale's rounding can
+        # make the scaled output 1px larger than the pad target and ffmpeg
+        # refuses with "Padded dimensions cannot be smaller than input
+        # dimensions".
+        w -= w % 2
+        h -= h % 2
+        w, h = max(2, w), max(2, h)
         graph = (
             f"[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
             f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[badge];"
