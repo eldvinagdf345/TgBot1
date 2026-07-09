@@ -36,8 +36,10 @@ def detect_watermark(
     Multi-template, multi-scale template matching across sample frames.
     Every reference image in templates_dir is tried at every scale in
     [scale_min, scale_max] against every sample frame; the single best-scoring
-    match wins. Returns (x, y, w, h) if its score clears match_threshold,
-    otherwise None (video treated as watermark-free).
+    match wins and is always returned - every video is assumed to actually
+    have the watermark, so this only locates where it is, it doesn't gate on
+    confidence. Returns None only if no template/scale combination could even
+    fit inside the frame (e.g. a corrupt/degenerate frame).
     """
     templates = _load_templates(templates_dir)
     scales = np.linspace(cfg.scale_min, cfg.scale_max, cfg.scale_steps)
@@ -63,6 +65,4 @@ def detect_watermark(
                     best_score = max_val
                     best_bbox = (max_loc[0], max_loc[1], w, h)
 
-    if best_score >= cfg.match_threshold:
-        return best_bbox
-    return None
+    return best_bbox
