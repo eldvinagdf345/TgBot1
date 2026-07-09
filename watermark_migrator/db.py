@@ -21,7 +21,10 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 class StateDB:
     def __init__(self, path: str):
-        self.conn = sqlite3.connect(path)
+        # check_same_thread=False: the GUI app creates this on the main
+        # thread but drives all the actual work from a background asyncio
+        # thread, one call at a time - never concurrently.
+        self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.execute(SCHEMA)
         self.conn.commit()
 
