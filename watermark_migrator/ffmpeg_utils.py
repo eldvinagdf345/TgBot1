@@ -44,7 +44,7 @@ async def encode_with_fallback(
     cmd = [
         cfg.ffmpeg_bin, "-y", *input_args,
         "-filter_complex", base_graph, "-map", "[masked]", "-map", "0:a?",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
         "-c:a", "copy", output_path,
     ]
     code, _, err = await _run(cmd)
