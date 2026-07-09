@@ -93,9 +93,14 @@ async def clean_watermark(
         # Stamp a fixed replacement badge (e.g. your own logo) scaled to the
         # detected watermark's size, in the same spot.
         extra_inputs = ["-i", cfg.overlay_image]
+        # Preserve the overlay's own aspect ratio (shrink to fit inside the
+        # box, pad the rest transparently) instead of stretching it to
+        # exactly w:h, so a square/round sticker doesn't get squashed into
+        # an elongated watermark box.
         graph = (
             f"{blur_graph};"
-            f"[1:v]scale={w}:{h}[badge];"
+            f"[1:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[badge];"
             f"[base][badge]overlay={x}:{y}[masked]"
         )
     else:
