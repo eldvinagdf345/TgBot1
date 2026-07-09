@@ -31,6 +31,7 @@ class Config:
     font_file: str
     font_color: str
     font_opacity: float
+    overlay_image: str
 
 
 def load_config() -> Config:
@@ -63,4 +64,5 @@ def load_config() -> Config:
         font_file=os.environ.get("FONT_FILE", ""),
         font_color=os.environ.get("FONT_COLOR", "white"),
         font_opacity=float(os.environ.get("FONT_OPACITY", "0.85")),
+        overlay_image=os.environ.get("OVERLAY_IMAGE", ""),
     )

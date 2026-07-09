@@ -80,59 +80,71 @@ async def clean_watermark(
     # Heavily blur just the watermark's box and paste it back over the
     # original frame - the rest of the picture is untouched pixel-for-pixel,
     # and the blurred patch makes any text in it unreadable without trying
-    # (and risking failing) to reconstruct what's underneath.
-    blur = (
-        f"split[main][wm];"
+    # (and risking failing) to reconstruct what's underneath. Everything
+    # else (filler text, or a replacement badge image) is stamped on top.
+    blur_graph = (
+        f"[0:v]split[main][wm];"
         f"[wm]crop={w}:{h}:{x}:{y},boxblur=20:4[blurred];"
-        f"[main][blurred]overlay={x}:{y}"
+        f"[main][blurred]overlay={x}:{y}[base]"
     )
 
-    # On top of the blur, stamp two rows of filler symbols in the same spot,
-    # at the configured color/opacity - reads as a (garbled) replacement
-    # watermark rather than an obviously-edited blur patch.
-    fontsize = max(10, int(h / 2.6))
-    row_gap = 2
-    row1_y = y + max(2, (h - 2 * fontsize - row_gap) // 2)
-    row2_y = row1_y + fontsize + row_gap
-    text = (
-        cfg.mask_text.replace("\\", "\\\\")
-        .replace(":", "\\:")
-        .replace("'", "\\'")
-        .replace("%", "%%")
-    )
-    fontfile_arg = f"fontfile='{cfg.font_file}':" if cfg.font_file else ""
-    color_spec = f"{cfg.font_color}@{cfg.font_opacity}"
+    extra_inputs: list[str] = []
+    if cfg.overlay_image:
+        # Stamp a fixed replacement badge (e.g. your own logo) scaled to the
+        # detected watermark's size, in the same spot.
+        extra_inputs = ["-i", cfg.overlay_image]
+        graph = (
+            f"{blur_graph};"
+            f"[1:v]scale={w}:{h}[badge];"
+            f"[base][badge]overlay={x}:{y}[masked]"
+        )
+    else:
+        # Stamp two rows of filler symbols at the configured color/opacity.
+        fontsize = max(10, int(h / 2.6))
+        row_gap = 2
+        row1_y = y + max(2, (h - 2 * fontsize - row_gap) // 2)
+        row2_y = row1_y + fontsize + row_gap
+        text = (
+            cfg.mask_text.replace("\\", "\\\\")
+            .replace(":", "\\:")
+            .replace("'", "\\'")
+            .replace("%", "%%")
+        )
+        fontfile_arg = f"fontfile='{cfg.font_file}':" if cfg.font_file else ""
+        color_spec = f"{cfg.font_color}@{cfg.font_opacity}"
 
-    def _drawtext(row_y: int) -> str:
-        return (
-            f"drawtext={fontfile_arg}text='{text}':"
-            f"x={x + 4}:y={row_y}:fontsize={fontsize}:fontcolor={color_spec}"
+        def _drawtext(label_in: str, label_out: str, row_y: int) -> str:
+            return (
+                f"[{label_in}]drawtext={fontfile_arg}text='{text}':"
+                f"x={x + 4}:y={row_y}:fontsize={fontsize}:fontcolor={color_spec}[{label_out}]"
+            )
+
+        graph = (
+            f"{blur_graph};"
+            f"{_drawtext('base', 't1', row1_y)};"
+            f"{_drawtext('t1', 'masked', row2_y)}"
         )
 
-    mask = f"{blur},{_drawtext(row1_y)},{_drawtext(row2_y)}"
-
     if cfg.use_gpu:
-        # Decode on CPU (cheap relative to encode) to sidestep flaky
-        # hwdownload/nvdec format negotiation across ffmpeg builds; still get
-        # the GPU speedup where it matters most, on the encode side.
-        vf = f"{mask},format=nv12,hwupload_cuda"
-        cmd = [
-            cfg.ffmpeg_bin, "-y",
-            "-i", input_path,
-            "-vf", vf,
+        graph += ";[masked]format=nv12,hwupload_cuda[outv]"
+        map_v = "outv"
+    else:
+        map_v = "masked"
+
+    cmd = [
+        cfg.ffmpeg_bin, "-y",
+        "-i", input_path, *extra_inputs,
+        "-filter_complex", graph,
+        "-map", f"[{map_v}]", "-map", "0:a?",
+    ]
+    if cfg.use_gpu:
+        cmd += [
             "-c:v", "h264_nvenc", "-preset", cfg.nvenc_preset,
             "-rc", "vbr", "-cq", str(cfg.nvenc_cq),
-            "-c:a", "copy",
-            output_path,
         ]
     else:
-        cmd = [
-            cfg.ffmpeg_bin, "-y", "-i", input_path,
-            "-vf", mask,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-c:a", "copy",
-            output_path,
-        ]
+        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
+    cmd += ["-c:a", "copy", output_path]
 
     code, _, err = await _run(cmd)
     if code != 0:
