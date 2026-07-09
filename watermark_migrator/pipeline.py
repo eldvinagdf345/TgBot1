@@ -4,7 +4,7 @@ import os
 import shutil
 from dataclasses import dataclass
 
-from .config import Config, load_config
+from .config import Config, load_config, prompt_for_channels
 from .db import StateDB, open_db
 from .detector import detect_watermark
 from .ffmpeg_utils import clean_watermark, extract_sample_frames, get_duration, get_video_dimensions
@@ -121,6 +121,7 @@ async def publish_one(
 
 async def run(cfg: Config | None = None) -> None:
     cfg = cfg or load_config()
+    prompt_for_channels(cfg)
     os.makedirs(cfg.work_dir, exist_ok=True)
     logging.basicConfig(level=logging.INFO)
 

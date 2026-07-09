@@ -39,8 +39,8 @@ def load_config() -> Config:
         api_id=int(os.environ["API_ID"]),
         api_hash=os.environ["API_HASH"],
         session_name=os.environ.get("SESSION_NAME", "watermark_migrator"),
-        source_channel=os.environ["SOURCE_CHANNEL"],
-        target_channel=os.environ["TARGET_CHANNEL"],
+        source_channel=os.environ.get("SOURCE_CHANNEL", ""),
+        target_channel=os.environ.get("TARGET_CHANNEL", ""),
         watermark_templates_dir=os.environ.get(
             "WATERMARK_TEMPLATES_DIR", "watermark_migrator/templates"
         ),
@@ -66,3 +66,19 @@ def load_config() -> Config:
         font_opacity=float(os.environ.get("FONT_OPACITY", "0.85")),
         overlay_image=os.environ.get("OVERLAY_IMAGE", ""),
     )
+
+
+def prompt_for_channels(cfg: Config) -> None:
+    """Ask for source/target channel at startup; press Enter to keep
+    whatever is already in .env instead of typing it every time."""
+    src = input(f"Канал-источник [{cfg.source_channel or 'не задан'}]: ").strip()
+    if src:
+        cfg.source_channel = src
+    if not cfg.source_channel:
+        raise SystemExit("Канал-источник не указан.")
+
+    tgt = input(f"Канал-приёмник [{cfg.target_channel or 'не задан'}]: ").strip()
+    if tgt:
+        cfg.target_channel = tgt
+    if not cfg.target_channel:
+        raise SystemExit("Канал-приёмник не указан.")

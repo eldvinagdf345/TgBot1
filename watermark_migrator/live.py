@@ -12,7 +12,7 @@ import os
 
 from telethon import events
 
-from .config import Config, load_config
+from .config import Config, load_config, prompt_for_channels
 from .db import open_db
 from .pipeline import _process_one, publish_one
 from .telegram_io import make_client
@@ -23,6 +23,7 @@ logger = logging.getLogger("watermark_migrator")
 
 async def run_live(cfg: Config | None = None) -> None:
     cfg = cfg or load_config()
+    prompt_for_channels(cfg)
     os.makedirs(cfg.work_dir, exist_ok=True)
     logging.basicConfig(level=logging.INFO)
     brand_terms = load_brand_terms(cfg.brand_terms_path)
