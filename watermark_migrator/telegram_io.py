@@ -43,12 +43,16 @@ async def upload_message(
     media_path: str | None,
     caption: str,
     video_attrs: tuple[float, int, int] | None = None,
+    progress_callback=None,
 ) -> None:
     """video_attrs, if given, is (duration_seconds, width, height) measured
     straight from the actual output file - passing it explicitly avoids
     Telegram guessing the wrong aspect ratio (which otherwise shows up as a
     stretched/squashed video, since Telethon can only auto-detect this with
-    the optional `hachoir` package installed)."""
+    the optional `hachoir` package installed).
+
+    progress_callback, if given, is called as callback(sent_bytes, total_bytes)
+    while uploading - Telethon calls this itself as the transfer progresses."""
     entity = await client.get_entity(target_channel)
     if media_path:
         attributes = None
@@ -63,6 +67,7 @@ async def upload_message(
         await client.send_file(
             entity, media_path, caption=caption or None,
             supports_streaming=True, attributes=attributes,
+            progress_callback=progress_callback,
         )
     elif caption and caption.strip():
         await client.send_message(entity, caption)

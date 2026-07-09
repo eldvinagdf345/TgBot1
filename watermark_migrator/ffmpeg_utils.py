@@ -16,14 +16,54 @@ async def _run(cmd: list[str]) -> tuple[int, bytes, bytes]:
     return proc.returncode, out, err
 
 
+async def _run_with_progress(
+    cmd: list[str], duration: float | None, progress_cb
+) -> tuple[int, bytes]:
+    """Same as _run, but if progress_cb is given, streams ffmpeg's
+    `-progress pipe:1` output and calls progress_cb(fraction_0_to_1) live as
+    encoding proceeds, instead of only finding out when it's completely done."""
+    if progress_cb is None or not duration:
+        code, _, err = await _run(cmd)
+        return code, err
+
+    cmd = [*cmd[:1], "-progress", "pipe:1", "-nostats", *cmd[1:]]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+
+    async def _read_progress():
+        assert proc.stdout is not None
+        async for line in proc.stdout:
+            text = line.decode(errors="ignore").strip()
+            if text.startswith("out_time_ms="):
+                try:
+                    us = int(text.split("=", 1)[1])
+                    progress_cb(min(1.0, max(0.0, (us / 1_000_000) / duration)))
+                except (ValueError, ZeroDivisionError):
+                    pass
+
+    _, err_bytes = await asyncio.gather(_read_progress(), proc.stderr.read())
+    code = await proc.wait()
+    return code, err_bytes
+
+
 async def encode_with_fallback(
-    cfg: Config, input_args: list[str], base_graph: str, output_path: str
+    cfg: Config,
+    input_args: list[str],
+    base_graph: str,
+    output_path: str,
+    duration: float | None = None,
+    progress_cb=None,
 ) -> None:
     """base_graph is a filter_complex graph whose final video output is
     labeled [masked]. Tries NVENC first if cfg.use_gpu, and automatically
     falls back to libx264 on CPU if that fails - e.g. an NVIDIA driver too
     old for this ffmpeg build's NVENC version (a common, confusing failure
-    that otherwise looks like the whole tool is broken)."""
+    that otherwise looks like the whole tool is broken).
+
+    If duration and progress_cb are given, progress_cb(fraction) is called
+    repeatedly while encoding so the caller can show live progress instead
+    of one long silent wait."""
     if cfg.use_gpu:
         gpu_graph = f"{base_graph};[masked]format=nv12,hwupload_cuda[outv]"
         cmd = [
@@ -33,7 +73,7 @@ async def encode_with_fallback(
             "-rc", "vbr", "-cq", str(cfg.nvenc_cq),
             "-c:a", "copy", output_path,
         ]
-        code, _, err = await _run(cmd)
+        code, err = await _run_with_progress(cmd, duration, progress_cb)
         if code == 0:
             return
         logger.warning(
@@ -47,7 +87,7 @@ async def encode_with_fallback(
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
         "-c:a", "copy", output_path,
     ]
-    code, _, err = await _run(cmd)
+    code, err = await _run_with_progress(cmd, duration, progress_cb)
     if code != 0:
         raise RuntimeError(f"ffmpeg failed: {err.decode(errors='ignore')[-2000:]}")
 
@@ -96,7 +136,8 @@ async def extract_sample_frames(cfg: Config, video_path: str, out_dir: str) -> l
 
 
 async def clean_watermark(
-    cfg: Config, input_path: str, output_path: str, bbox: tuple[int, int, int, int]
+    cfg: Config, input_path: str, output_path: str, bbox: tuple[int, int, int, int],
+    duration: float | None = None, progress_cb=None,
 ) -> None:
     x, y, w, h = bbox
 
@@ -176,4 +217,7 @@ async def clean_watermark(
             f"{_drawtext('t1', 'masked', row2_y)}"
         )
 
-    await encode_with_fallback(cfg, ["-i", input_path, *extra_inputs], graph, output_path)
+    await encode_with_fallback(
+        cfg, ["-i", input_path, *extra_inputs], graph, output_path,
+        duration=duration, progress_cb=progress_cb,
+    )

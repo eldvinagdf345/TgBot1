@@ -1,15 +1,16 @@
 """
 Manual editor - 3 actions:
   1. Выбрать файл (photo or video, from your computer) - video gets a real
-     player (play/pause + seek) so you can actually watch it, not just a
-     single static frame.
+     player (play/pause + seek, paced to real time) so you can actually
+     watch it, not just a single static frame.
   2. Добавить знак - drops in the one fixed overlay image as a selection box
      (dashed outline + a big corner handle per corner, CapCut-style). Drag
      the middle to move, drag any corner to resize - both track the cursor
      1:1, no lag, no delete/recreate per frame.
   3. Готово - locks the mark in place (no more moving/resizing), burns it
-     into the whole file and sends the result to TARGET_CHANNEL, then
-     clears the file so you can pick the next one.
+     into the whole file and sends the result to TARGET_CHANNEL with live
+     progress for both the encode and the upload, then clears the file so
+     you can pick the next one.
 
 Login to Telegram (phone/code/2FA password) happens through dialog boxes in
 this window, not the console.
@@ -21,20 +22,22 @@ import asyncio
 import os
 import tempfile
 import threading
+import time
 import tkinter as tk
-from tkinter import filedialog, simpledialog
+from tkinter import filedialog, simpledialog, ttk
 
 import cv2
 from PIL import Image, ImageTk
 
 from .config import Config, load_config
-from .ffmpeg_utils import encode_with_fallback, get_video_dimensions
+from .ffmpeg_utils import encode_with_fallback, get_duration, get_video_dimensions
 from .telegram_io import make_client, upload_message
 
 PREVIEW_MAX_W = 960
 PREVIEW_MAX_H = 540
 HANDLE_R = 11  # corner grab-circle radius, in canvas pixels
 MIN_BOX = 30
+PLAYER_TICK_MS = 20  # how often we re-check the clock while playing
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
 
@@ -46,8 +49,16 @@ ACCENT_GREEN = "#3ecf8e"
 TEXT = "#eaeaf0"
 MUTED = "#9497a8"
 FONT = ("Segoe UI", 11)
+FONT_MONO = ("Consolas", 10)
 FONT_BOLD = ("Segoe UI", 12, "bold")
 FONT_TITLE = ("Segoe UI", 16, "bold")
+
+
+def _fmt_time(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
 def _styled_button(parent, text, command, bg=ACCENT, fg="#0c0d12", state="normal"):
@@ -104,6 +115,8 @@ class SimpleOverlayApp:
         self.file_path = None
         self.is_video = False
         self.scale = 1.0
+        self.offset_x = 0
+        self.offset_y = 0
         self.overlay_pil = Image.open(cfg.overlay_image).convert("RGBA")
         self.overlay_box = [30, 30, 220, 100]  # x, y, w, h in canvas pixels
         self._drag = {"mode": None, "corner": None, "x": 0, "y": 0}
@@ -116,11 +129,14 @@ class SimpleOverlayApp:
         self.video_frame_count = 1
         self.playing = False
         self._play_after_id = None
+        self._play_start_wall = 0.0
+        self._play_start_frame = 0
         self._suppress_seek = False
 
         self.root = tk.Tk()
         self.root.title("Наложение знака")
         self.root.configure(bg=BG)
+        self.root.resizable(False, False)
 
         tk.Label(
             self.root, text="Наложение знака", bg=BG, fg=TEXT, font=FONT_TITLE
@@ -130,7 +146,19 @@ class SimpleOverlayApp:
         tk.Label(
             self.root, textvariable=self.status_var, anchor="w",
             bg=BG, fg=MUTED, font=FONT,
-        ).pack(fill="x", padx=16, pady=(0, 8))
+        ).pack(fill="x", padx=16, pady=(0, 4))
+
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure(
+            "Wm.Horizontal.TProgressbar", troughcolor=PANEL, background=ACCENT,
+            bordercolor=PANEL, lightcolor=ACCENT, darkcolor=ACCENT,
+        )
+        self.progress = ttk.Progressbar(
+            self.root, style="Wm.Horizontal.TProgressbar", orient="horizontal",
+            length=PREVIEW_MAX_W, mode="determinate", maximum=100,
+        )
+        self.progress.pack(padx=16, pady=(0, 8))
 
         canvas_frame = tk.Frame(self.root, bg=PANEL, highlightbackground="#3a3c4d", highlightthickness=1)
         canvas_frame.pack(padx=16, pady=4)
@@ -142,16 +170,23 @@ class SimpleOverlayApp:
 
         # video transport (hidden until a video is loaded)
         self.transport = tk.Frame(self.root, bg=BG)
-        self.play_btn = _styled_button(self.transport, "▶  Смотреть", self._toggle_play, bg="#3a3c4d", fg=TEXT)
-        self.play_btn.pack(side="left", padx=(16, 8))
+        self.play_btn = _styled_button(
+            self.transport, "▶", self._toggle_play, bg="#3a3c4d", fg=TEXT
+        )
+        self.play_btn.config(padx=10, pady=4, font=FONT_BOLD)
+        self.play_btn.pack(side="left", padx=(16, 10))
         self.seek_var = tk.DoubleVar(value=0)
         self.seek_scale = tk.Scale(
             self.transport, from_=0, to=1, orient="horizontal", variable=self.seek_var,
-            showvalue=False, command=self._on_seek, length=PREVIEW_MAX_W - 140,
+            showvalue=False, command=self._on_seek, length=PREVIEW_MAX_W - 210,
             bg=BG, fg=TEXT, troughcolor=PANEL, highlightthickness=0, bd=0,
-            activebackground=ACCENT,
+            activebackground=ACCENT, sliderrelief="flat",
         )
-        self.seek_scale.pack(side="left", padx=8, fill="x", expand=True)
+        self.seek_scale.pack(side="left", padx=8)
+        self.time_var = tk.StringVar(value="0:00 / 0:00")
+        tk.Label(
+            self.transport, textvariable=self.time_var, bg=BG, fg=MUTED, font=FONT_MONO
+        ).pack(side="left", padx=(4, 16))
 
         self.btns_frame = tk.Frame(self.root, bg=BG)
         self.btns_frame.pack(pady=14)
@@ -187,6 +222,10 @@ class SimpleOverlayApp:
 
     def _set_status(self, text: str):
         self.root.after(0, lambda: self.status_var.set(text))
+
+    def _set_progress(self, fraction: float):
+        pct = max(0.0, min(1.0, fraction)) * 100
+        self.root.after(0, lambda: self.progress.config(value=pct))
 
     def _set_busy(self, busy: bool):
         self.busy = busy
@@ -257,8 +296,9 @@ class SimpleOverlayApp:
         self.is_video = os.path.splitext(path)[1].lower() in VIDEO_EXTS
         self.locked = False
         self._clear_overlay_items()
-        self.canvas.delete("all")
+        self.canvas.delete("bg")
         self.bg_image_id = None
+        self.progress.config(value=0)
 
         if self.is_video:
             self._open_video(path)
@@ -278,11 +318,12 @@ class SimpleOverlayApp:
         self._suppress_seek = True
         self.seek_var.set(0)
         self._suppress_seek = False
-        self.transport.pack(fill="x", padx=16, before=self.btns_frame)
+        self.transport.pack(fill="x", padx=0, before=self.btns_frame)
 
         ok, frame = self.cap.read()
         if ok:
             self._show_frame(self._to_pil(frame))
+        self._update_time_label(0)
         self._set_status("Видео загружено - можно посмотреть (▶) или сразу 'Добавить знак'.")
         self.mark_btn.config(state="normal")
 
@@ -290,18 +331,32 @@ class SimpleOverlayApp:
         rgb = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
         return Image.fromarray(rgb)
 
+    def _update_time_label(self, frame_idx: int):
+        cur = _fmt_time(frame_idx / self.video_fps)
+        total = _fmt_time(self.video_frame_count / self.video_fps)
+        self.time_var.set(f"{cur} / {total}")
+
     def _show_frame(self, img: Image.Image):
+        """Canvas stays a fixed size always - the frame is scaled to fit and
+        centered inside it (like a real player's letterboxing), so the
+        surrounding layout never jumps around between portrait/landscape
+        files."""
         scale = min(PREVIEW_MAX_W / img.width, PREVIEW_MAX_H / img.height, 1.0)
         self.scale = scale
-        disp = img.resize(
-            (max(1, int(img.width * scale)), max(1, int(img.height * scale))), Image.NEAREST
-        )
+        disp_w = max(1, int(img.width * scale))
+        disp_h = max(1, int(img.height * scale))
+        self.offset_x = (PREVIEW_MAX_W - disp_w) // 2
+        self.offset_y = (PREVIEW_MAX_H - disp_h) // 2
+
+        disp = img.resize((disp_w, disp_h), Image.NEAREST)
         self.bg_photo = ImageTk.PhotoImage(disp)
         if self.bg_image_id is None:
-            self.canvas.config(width=disp.width, height=disp.height)
-            self.bg_image_id = self.canvas.create_image(0, 0, anchor="nw", image=self.bg_photo)
+            self.bg_image_id = self.canvas.create_image(
+                self.offset_x, self.offset_y, anchor="nw", image=self.bg_photo, tags="bg"
+            )
             self.canvas.tag_lower(self.bg_image_id)
         else:
+            self.canvas.coords(self.bg_image_id, self.offset_x, self.offset_y)
             self.canvas.itemconfig(self.bg_image_id, image=self.bg_photo)
 
     def _toggle_play(self):
@@ -311,7 +366,9 @@ class SimpleOverlayApp:
             self._stop_playback()
         else:
             self.playing = True
-            self.play_btn.config(text="⏸  Пауза")
+            self.play_btn.config(text="⏸")
+            self._play_start_wall = time.perf_counter()
+            self._play_start_frame = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
             self._play_tick()
 
     def _stop_playback(self):
@@ -322,22 +379,33 @@ class SimpleOverlayApp:
             except Exception:
                 pass
             self._play_after_id = None
-        self.play_btn.config(text="▶  Смотреть")
+        self.play_btn.config(text="▶")
 
     def _play_tick(self):
+        """Paced to the wall clock: computes which frame SHOULD be showing
+        right now given real elapsed time, and jumps straight to it if we've
+        fallen behind, instead of dutifully decoding every frame in order
+        (which is what made playback drift into slow motion before)."""
         if not self.playing or not self.cap:
             return
+        elapsed = time.perf_counter() - self._play_start_wall
+        target = int(self._play_start_frame + elapsed * self.video_fps)
+        if target >= self.video_frame_count:
+            self._stop_playback()
+            return
+        current = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+        if target != current:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, target)
         ok, frame = self.cap.read()
         if not ok:
             self._stop_playback()
             return
         self._show_frame(self._to_pil(frame))
-        pos = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
         self._suppress_seek = True
-        self.seek_var.set(pos)
+        self.seek_var.set(target)
         self._suppress_seek = False
-        delay = max(10, int(1000 / self.video_fps))
-        self._play_after_id = self.root.after(delay, self._play_tick)
+        self._update_time_label(target)
+        self._play_after_id = self.root.after(PLAYER_TICK_MS, self._play_tick)
 
     def _on_seek(self, value):
         if self._suppress_seek or not self.cap:
@@ -348,6 +416,7 @@ class SimpleOverlayApp:
         ok, frame = self.cap.read()
         if ok:
             self._show_frame(self._to_pil(frame))
+            self._update_time_label(idx)
 
     # ---------------- 2. add mark (drag + corner-handle resize) ----------------
     def on_add_mark(self):
@@ -356,7 +425,7 @@ class SimpleOverlayApp:
         self.locked = False
         w = 220
         h = int(220 * self.overlay_pil.height / self.overlay_pil.width)
-        self.overlay_box = [30, 30, w, h]
+        self.overlay_box = [self.offset_x + 20, self.offset_y + 20, w, h]
         self._create_overlay_items()
         self.hint_var.set("Тащите за середину = двигать. Тащите за кружок в углу = менять размер.")
         self._set_status("Разместите знак, затем нажмите 'Готово'.")
@@ -473,12 +542,15 @@ class SimpleOverlayApp:
         self._stop_playback()
         x, y, w, h = self.overlay_box
         bbox = (
-            int(x / self.scale), int(y / self.scale),
-            int(w / self.scale), int(h / self.scale),
+            int((x - self.offset_x) / self.scale),
+            int((y - self.offset_y) / self.scale),
+            int(w / self.scale),
+            int(h / self.scale),
         )
         self._set_busy(True)
         self.hint_var.set("Знак зафиксирован.")
-        self._set_status("Кодирую файл - для длинных видео это может занять пару минут...")
+        self.progress.config(value=0)
+        self._set_status("Кодирую видео... 0%")
         self._run_async(self._process_and_send(bbox))
 
     async def _process_and_send(self, bbox: tuple[int, int, int, int]):
@@ -486,11 +558,28 @@ class SimpleOverlayApp:
         out_path = os.path.join(tempfile.gettempdir(), f"wm_output{ext}")
         try:
             if self.is_video:
-                await self._burn_video(self.file_path, out_path, bbox)
+                duration = await get_duration(self.cfg, self.file_path)
+
+                def on_encode_progress(frac: float):
+                    self._set_status(f"Кодирую видео... {int(frac * 100)}%")
+                    self._set_progress(frac)
+
+                await self._burn_video(self.file_path, out_path, bbox, duration, on_encode_progress)
             else:
                 self._burn_image(self.file_path, out_path, bbox)
-            self._set_status("Загружаю в Telegram...")
-            await upload_message(self.client, self.cfg.target_channel, out_path, "")
+
+            self.progress.config(value=0)
+            self._set_status("Загружаю в Telegram... 0%")
+
+            def on_upload_progress(sent: int, total: int):
+                frac = (sent / total) if total else 0.0
+                self._set_status(f"Загружаю в Telegram... {int(frac * 100)}%")
+                self._set_progress(frac)
+
+            await upload_message(
+                self.client, self.cfg.target_channel, out_path, "",
+                progress_callback=on_upload_progress,
+            )
         except Exception as e:
             self._set_status(f"Ошибка: {e}")
             self.locked = False
@@ -498,6 +587,7 @@ class SimpleOverlayApp:
             return
 
         self._set_status("Отправлено! Выберите следующий файл.")
+        self._set_progress(0)
         self.file_path = None
         self.overlay_id = None
         self.locked = False
@@ -518,7 +608,10 @@ class SimpleOverlayApp:
         self.root.after(0, _reset_canvas)
         self._set_busy(False)
 
-    async def _burn_video(self, input_path: str, output_path: str, bbox: tuple[int, int, int, int]) -> None:
+    async def _burn_video(
+        self, input_path: str, output_path: str, bbox: tuple[int, int, int, int],
+        duration: float, progress_cb,
+    ) -> None:
         x, y, w, h = bbox
         frame_w, frame_h = await get_video_dimensions(self.cfg, input_path)
         x = max(0, min(x, frame_w - 1))
@@ -538,7 +631,8 @@ class SimpleOverlayApp:
             f"[0:v][badge]overlay={x}:{y}[masked]"
         )
         await encode_with_fallback(
-            self.cfg, ["-i", input_path, "-i", self.cfg.overlay_image], graph, output_path
+            self.cfg, ["-i", input_path, "-i", self.cfg.overlay_image], graph, output_path,
+            duration=duration, progress_cb=progress_cb,
         )
 
     def _burn_image(self, input_path: str, output_path: str, bbox: tuple[int, int, int, int]) -> None:
