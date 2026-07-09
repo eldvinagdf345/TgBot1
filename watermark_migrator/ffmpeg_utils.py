@@ -1,8 +1,11 @@
 import asyncio
 import json
+import logging
 import os
 
 from .config import Config
+
+logger = logging.getLogger("watermark_migrator")
 
 
 async def _run(cmd: list[str]) -> tuple[int, bytes, bytes]:
@@ -11,6 +14,42 @@ async def _run(cmd: list[str]) -> tuple[int, bytes, bytes]:
     )
     out, err = await proc.communicate()
     return proc.returncode, out, err
+
+
+async def encode_with_fallback(
+    cfg: Config, input_args: list[str], base_graph: str, output_path: str
+) -> None:
+    """base_graph is a filter_complex graph whose final video output is
+    labeled [masked]. Tries NVENC first if cfg.use_gpu, and automatically
+    falls back to libx264 on CPU if that fails - e.g. an NVIDIA driver too
+    old for this ffmpeg build's NVENC version (a common, confusing failure
+    that otherwise looks like the whole tool is broken)."""
+    if cfg.use_gpu:
+        gpu_graph = f"{base_graph};[masked]format=nv12,hwupload_cuda[outv]"
+        cmd = [
+            cfg.ffmpeg_bin, "-y", *input_args,
+            "-filter_complex", gpu_graph, "-map", "[outv]", "-map", "0:a?",
+            "-c:v", "h264_nvenc", "-preset", cfg.nvenc_preset,
+            "-rc", "vbr", "-cq", str(cfg.nvenc_cq),
+            "-c:a", "copy", output_path,
+        ]
+        code, _, err = await _run(cmd)
+        if code == 0:
+            return
+        logger.warning(
+            "GPU encode failed, falling back to CPU: %s",
+            err.decode(errors="ignore").strip()[-300:],
+        )
+
+    cmd = [
+        cfg.ffmpeg_bin, "-y", *input_args,
+        "-filter_complex", base_graph, "-map", "[masked]", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "copy", output_path,
+    ]
+    code, _, err = await _run(cmd)
+    if code != 0:
+        raise RuntimeError(f"ffmpeg failed: {err.decode(errors='ignore')[-2000:]}")
 
 
 async def get_duration(cfg: Config, video_path: str) -> float:
@@ -130,27 +169,4 @@ async def clean_watermark(
             f"{_drawtext('t1', 'masked', row2_y)}"
         )
 
-    if cfg.use_gpu:
-        graph += ";[masked]format=nv12,hwupload_cuda[outv]"
-        map_v = "outv"
-    else:
-        map_v = "masked"
-
-    cmd = [
-        cfg.ffmpeg_bin, "-y",
-        "-i", input_path, *extra_inputs,
-        "-filter_complex", graph,
-        "-map", f"[{map_v}]", "-map", "0:a?",
-    ]
-    if cfg.use_gpu:
-        cmd += [
-            "-c:v", "h264_nvenc", "-preset", cfg.nvenc_preset,
-            "-rc", "vbr", "-cq", str(cfg.nvenc_cq),
-        ]
-    else:
-        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
-    cmd += ["-c:a", "copy", output_path]
-
-    code, _, err = await _run(cmd)
-    if code != 0:
-        raise RuntimeError(f"ffmpeg clean failed: {err.decode(errors='ignore')[-2000:]}")
+    await encode_with_fallback(cfg, ["-i", input_path, *extra_inputs], graph, output_path)
