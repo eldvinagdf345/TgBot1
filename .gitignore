@@ -1,0 +1,7 @@
+forum_clone/.env
+forum_clone/*.session
+forum_clone/*.session-journal
+forum_clone/state.json
+forum_clone/downloads/
+__pycache__/
+*.pyc
