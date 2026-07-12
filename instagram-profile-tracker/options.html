@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="style.css" />
+  <style>body { width: 420px; }</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Настройки бота</h1>
+    <p class="hint">
+      1. Создай бота через <code>@BotFather</code> в Telegram, скопируй токен.<br />
+      2. Напиши своему боту любое сообщение (например <code>/start</code>).<br />
+      3. Открой в браузере
+      <code>https://api.telegram.org/bot&lt;ТВОЙ_ТОКЕН&gt;/getUpdates</code>
+      и найди в ответе <code>"chat":{"id": ...}</code> — это твой Chat ID.
+    </p>
+
+    <label class="field-label" for="botToken">Bot Token</label>
+    <input id="botToken" type="password" placeholder="123456:ABC-..." autocomplete="off" />
+
+    <label class="field-label" for="chatId">Chat ID</label>
+    <input id="chatId" type="text" placeholder="123456789" autocomplete="off" />
+
+    <div class="checkbox-row">
+      <input id="autoSend" type="checkbox" />
+      <label for="autoSend">Отправлять в Telegram сразу при каждом новом профиле (без ручной кнопки)</label>
+    </div>
+
+    <div class="row">
+      <button id="saveBtn" class="primary">Сохранить</button>
+    </div>
+    <div id="status"></div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

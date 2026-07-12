@@ -1,0 +1,83 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #0A0D14;
+  color: #F1F5F9;
+  font-family: "Segoe UI", -apple-system, sans-serif;
+  font-size: 13px;
+}
+
+.wrap { padding: 16px; }
+
+h1 {
+  font-size: 15px;
+  margin: 0 0 12px;
+  color: #2563EB;
+}
+
+.hint {
+  color: #6B7280;
+  font-size: 11px;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+ul#list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #1F2937;
+  border-radius: 8px;
+}
+
+ul#list li {
+  padding: 8px 10px;
+  border-bottom: 1px solid #1F2937;
+}
+ul#list li:last-child { border-bottom: none; }
+ul#list li.empty { color: #6B7280; text-align: center; }
+
+label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+
+.row { display: flex; gap: 8px; margin-bottom: 8px; }
+
+button {
+  flex: 1;
+  background: #111827;
+  color: #F1F5F9;
+  border: 1px solid #1F2937;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+button:hover { background: #1F2937; }
+button.primary { background: #2563EB; border-color: #2563EB; }
+button.primary:hover { background: #1D4ED8; }
+button.danger { color: #EF4444; }
+
+#status { min-height: 16px; margin-top: 8px; font-size: 12px; color: #6B7280; }
+
+input[type="text"], input[type="password"] {
+  width: 100%;
+  background: #111827;
+  border: 1px solid #1F2937;
+  border-radius: 8px;
+  color: #F1F5F9;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.field-label { display: block; margin-bottom: 6px; color: #6B7280; }
+
+.checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+
+code {
+  background: #1F2937;
+  padding: 1px 5px;
+  border-radius: 4px;
+}

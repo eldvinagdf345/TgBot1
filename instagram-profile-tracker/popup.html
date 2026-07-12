@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="style.css" />
+  <style>body { width: 300px; }</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Instagram Profile Tracker</h1>
+    <p class="hint">Собрано ников: <span id="count">0</span>. Список сохраняется, пока ты его не очистишь.</p>
+
+    <ul id="list"></ul>
+
+    <div class="row">
+      <button id="sendBtn" class="primary">Отправить в Telegram</button>
+    </div>
+    <div class="row">
+      <button id="copyBtn">Скопировать</button>
+      <button id="clearBtn" class="danger">Очистить</button>
+    </div>
+    <div class="row">
+      <button id="optionsBtn">⚙️ Настройки бота</button>
+    </div>
+
+    <div id="status"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
