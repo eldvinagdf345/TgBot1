@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "IG Profile Tracker (Test)",
+  "version": "0.1.0",
+  "description": "Тестовая версия: при переходе на профиль Instagram выводит его ник в консоль браузера.",
+  "content_scripts": [
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
