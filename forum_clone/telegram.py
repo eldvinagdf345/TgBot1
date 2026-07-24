@@ -12,6 +12,7 @@ from telethon.tl.functions.channels import (
     GetForumTopicsRequest,
     GetFullChannelRequest,
     ToggleForumRequest,
+    UpdatePinnedForumTopicRequest,
 )
 from telethon.tl.functions.messages import EditChatAboutRequest
 
@@ -130,44 +131,59 @@ async def fetch_all_topics(client, source):
     return topics
 
 
-async def ensure_target_topics(client, target, source_topics, state):
-    """Creates matching topics in the target forum, returns {source_id: target_id}."""
-    mapping = {}
-    for t in source_topics:
-        existing = state.get_topic(t.id)
-        if existing:
-            mapping[t.id] = existing["target_topic_id"]
-            continue
+async def ensure_topic(client, target, t, state):
+    """Creates (or reuses, if already recorded in state) the target-forum
+    counterpart of source topic `t`. Returns its target_topic_id."""
+    existing = state.get_topic(t.id)
+    if existing:
+        return existing["target_topic_id"]
 
-        if t.id == 1:
-            # Topic id 1 is Telegram's built-in "General" topic - it already
-            # exists in every forum, we just rename it to match the source.
-            try:
-                await retry_flood(client, EditForumTopicRequest(channel=target, topic_id=1, title=t.title))
-            except Exception:
-                pass
-            state.set_topic_mapping(t.id, 1)
-            mapping[t.id] = 1
-            print(f"  + тема «{t.title}» -> General")
-            continue
+    if t.id == 1:
+        # Topic id 1 is Telegram's built-in "General" topic - it already
+        # exists in every forum, we just rename it to match the source.
+        try:
+            await retry_flood(client, EditForumTopicRequest(channel=target, topic_id=1, title=t.title))
+        except Exception:
+            pass
+        state.set_topic_mapping(t.id, 1)
+        print(f"  + тема «{t.title}» -> General")
+        return 1
 
-        request = CreateForumTopicRequest(
-            channel=target, title=t.title,
-            icon_color=getattr(t, "icon_color", None),
-            icon_emoji_id=getattr(t, "icon_emoji_id", None) or None,
-        )
-        result = await retry_flood(client, request)
-        new_id = None
-        for upd in result.updates:
-            msg = getattr(upd, "message", None)
-            if msg is not None and isinstance(getattr(msg, "action", None), types.MessageActionTopicCreate):
-                new_id = msg.id
-                break
-        if new_id is None:
-            raise RuntimeError(f"Не удалось определить id новой темы «{t.title}»")
+    request = CreateForumTopicRequest(
+        channel=target, title=t.title,
+        icon_color=getattr(t, "icon_color", None),
+        icon_emoji_id=getattr(t, "icon_emoji_id", None) or None,
+    )
+    result = await retry_flood(client, request)
+    new_id = None
+    for upd in result.updates:
+        msg = getattr(upd, "message", None)
+        if msg is not None and isinstance(getattr(msg, "action", None), types.MessageActionTopicCreate):
+            new_id = msg.id
+            break
+    if new_id is None:
+        raise RuntimeError(f"Не удалось определить id новой темы «{t.title}»")
 
-        state.set_topic_mapping(t.id, new_id)
-        mapping[t.id] = new_id
-        print(f"  + тема «{t.title}» создана (id {new_id})")
+    state.set_topic_mapping(t.id, new_id)
+    print(f"  + тема «{t.title}» создана (id {new_id})")
+    return new_id
 
-    return mapping
+
+async def finalize_topic(client, target, source_topic, target_topic_id):
+    """Re-applies the source topic's closed/pinned-in-list status. Call this
+    only after all of that topic's messages have been copied."""
+    if getattr(source_topic, "closed", False):
+        try:
+            await retry_flood(client, EditForumTopicRequest(
+                channel=target, topic_id=target_topic_id, closed=True,
+            ))
+        except Exception as e:
+            print(f"  ! не удалось закрыть тему «{source_topic.title}»: {e}")
+
+    if getattr(source_topic, "pinned", False):
+        try:
+            await retry_flood(client, UpdatePinnedForumTopicRequest(
+                channel=target, topic_id=target_topic_id, pinned=True,
+            ))
+        except Exception as e:
+            print(f"  ! не удалось закрепить тему «{source_topic.title}» в списке: {e}")
