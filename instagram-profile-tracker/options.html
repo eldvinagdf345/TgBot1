@@ -10,22 +10,20 @@
     <h1>Настройки бота</h1>
     <p class="hint">
       1. Создай бота через <code>@BotFather</code> в Telegram, скопируй токен.<br />
-      2. Напиши своему боту любое сообщение (например <code>/start</code>).<br />
-      3. Открой в браузере
+      2. Для отправки себе в личку — напиши своему боту любое сообщение
+      (например <code>/start</code>), затем открой в браузере
       <code>https://api.telegram.org/bot&lt;ТВОЙ_ТОКЕН&gt;/getUpdates</code>
-      и найди в ответе <code>"chat":{"id": ...}</code> — это твой Chat ID.
+      и найди в ответе <code>"chat":{"id": ...}</code> — это твой Chat ID.<br />
+      3. Для отправки в канал — добавь бота в канал администратором с правом
+      публикации, а в Chat ID укажи <code>@username_канала</code> (для
+      публичного) или числовой ID канала (для приватного).
     </p>
 
     <label class="field-label" for="botToken">Bot Token</label>
     <input id="botToken" type="password" placeholder="123456:ABC-..." autocomplete="off" />
 
-    <label class="field-label" for="chatId">Chat ID</label>
-    <input id="chatId" type="text" placeholder="123456789" autocomplete="off" />
-
-    <div class="checkbox-row">
-      <input id="autoSend" type="checkbox" />
-      <label for="autoSend">Отправлять в Telegram сразу при каждом новом профиле (без ручной кнопки)</label>
-    </div>
+    <label class="field-label" for="chatId">Chat ID (личка или канал)</label>
+    <input id="chatId" type="text" placeholder="123456789 или @my_channel" autocomplete="off" />
 
     <div class="row">
       <button id="saveBtn" class="primary">Сохранить</button>

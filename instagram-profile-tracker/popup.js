@@ -63,4 +63,23 @@ document.getElementById("optionsBtn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
+function updateStatusText(enabled) {
+  document.getElementById("trackingStatusText").textContent = enabled
+    ? "🟢 Активно — записывает профили"
+    : "⏸ Остановлено";
+}
+
+async function loadTrackingState() {
+  const { trackingEnabled = false } = await chrome.storage.local.get("trackingEnabled");
+  document.getElementById("trackingToggle").checked = trackingEnabled;
+  updateStatusText(trackingEnabled);
+}
+
+document.getElementById("trackingToggle").addEventListener("change", async (e) => {
+  const enabled = e.target.checked;
+  await chrome.storage.local.set({ trackingEnabled: enabled });
+  updateStatusText(enabled);
+});
+
 render();
+loadTrackingState();

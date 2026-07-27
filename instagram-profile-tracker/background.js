@@ -49,21 +49,19 @@ async function addUsername(username) {
   profiles.push({ username, addedAt: Date.now() });
   await chrome.storage.local.set({ profiles });
   updateBadge(profiles.length);
-
-  const { autoSend } = await chrome.storage.local.get("autoSend");
-  if (autoSend) {
-    try {
-      await sendToTelegram([username]);
-    } catch (e) {
-      console.warn("Instagram Profile Tracker: авто-отправка не удалась:", e.message);
-    }
-  }
 }
 
-function handleNavigation(details) {
+async function isTrackingEnabled() {
+  const { trackingEnabled = false } = await chrome.storage.local.get("trackingEnabled");
+  return trackingEnabled;
+}
+
+async function handleNavigation(details) {
   if (details.frameId !== 0) return;
   const username = extractUsername(details.url);
-  if (username) addUsername(username);
+  if (!username) return;
+  if (!(await isTrackingEnabled())) return;
+  addUsername(username);
 }
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(handleNavigation, {
