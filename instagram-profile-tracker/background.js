@@ -77,12 +77,18 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 async function sendToTelegram(usernames) {
-  const { botToken, chatId } = await chrome.storage.local.get(["botToken", "chatId"]);
+  const { botToken, chatId, sendAsLink = false } = await chrome.storage.local.get([
+    "botToken",
+    "chatId",
+    "sendAsLink",
+  ]);
   if (!botToken || !chatId) {
     throw new Error("Бот не настроен. Открой настройки расширения и укажи Bot Token и Chat ID.");
   }
 
-  const list = usernames.map((u) => `@${u}`).join("\n");
+  const list = usernames
+    .map((u) => (sendAsLink ? `https://www.instagram.com/${u}/` : `@${u}`))
+    .join("\n");
   const text = `📋 Instagram-профили (${usernames.length}):\n${list}`;
 
   const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {

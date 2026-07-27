@@ -63,6 +63,15 @@ document.getElementById("optionsBtn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
+async function loadSendAsLink() {
+  const { sendAsLink = false } = await chrome.storage.local.get("sendAsLink");
+  document.getElementById("sendAsLink").checked = sendAsLink;
+}
+
+document.getElementById("sendAsLink").addEventListener("change", async (e) => {
+  await chrome.storage.local.set({ sendAsLink: e.target.checked });
+});
+
 function updateStatusText(enabled) {
   document.getElementById("trackingStatusText").textContent = enabled
     ? "🟢 Активно — записывает профили"
@@ -83,3 +92,4 @@ document.getElementById("trackingToggle").addEventListener("change", async (e) =
 
 render();
 loadTrackingState();
+loadSendAsLink();
