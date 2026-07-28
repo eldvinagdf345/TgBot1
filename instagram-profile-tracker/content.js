@@ -1,7 +1,18 @@
-// Ссылка на профиль в разметке Instagram выглядит как href="/username/" —
-// это единственное надёжное отличие ника от отображаемого имени рядом с ним
-// (имя — обычный текст, не ссылка).
+// Ссылка на профиль в разметке Instagram выглядит как href="/username/".
+// Это самый надёжный способ отличить ник от отображаемого имени рядом —
+// но в некоторых списках (например "Отметки Нравится") Instagram рисует
+// строки без <a>, просто текстом с обработчиком клика. Поэтому это лишь
+// первая попытка, а не единственная.
 const USERNAME_HREF_RE = /^\/([A-Za-z0-9._]{1,30})\/?$/;
+// Instagram-ники — только латиница, цифры, точка и подчёркивание, без
+// пробелов. Отображаемое имя почти всегда содержит пробел, кириллицу или
+// эмодзи, поэтому по этому шаблону их можно различить в чистом тексте.
+const USERNAME_LINE_RE = /^[A-Za-z0-9._]{1,30}$/;
+const STOPWORDS = new Set([
+  "follow", "following", "requested", "remove", "message", "unfollow",
+  "подписаться", "отписаться", "подписки", "запрошено", "написать",
+  "удалить", "заблокировать", "block", "ok", "cancel", "отмена",
+]);
 
 function usernameFromHref(href) {
   if (!href) return null;
@@ -9,14 +20,8 @@ function usernameFromHref(href) {
   return match ? match[1] : null;
 }
 
-function extractUsernamesFromSelection() {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-    return { usernames: [], error: "Ничего не выделено на странице." };
-  }
-
+function extractLinksFromSelection(selection) {
   const usernames = new Set();
-
   for (let i = 0; i < selection.rangeCount; i++) {
     const range = selection.getRangeAt(i);
 
@@ -36,9 +41,37 @@ function extractUsernamesFromSelection() {
       if (username) usernames.add(username);
     }
   }
+  return usernames;
+}
+
+function extractFromPlainText(selection) {
+  const usernames = new Set();
+  const text = selection.toString();
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  for (const line of lines) {
+    if (!USERNAME_LINE_RE.test(line)) continue;
+    if (STOPWORDS.has(line.toLowerCase())) continue;
+    usernames.add(line);
+  }
+  return usernames;
+}
+
+function extractUsernamesFromSelection() {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return { usernames: [], error: "Ничего не выделено на странице." };
+  }
+
+  let usernames = extractLinksFromSelection(selection);
+  if (usernames.size === 0) {
+    usernames = extractFromPlainText(selection);
+  }
 
   if (usernames.size === 0) {
-    return { usernames: [], error: "В выделении не найдено ссылок на профили." };
+    return { usernames: [], error: "Не удалось распознать ники в выделении." };
   }
   return { usernames: Array.from(usernames), error: null };
 }
