@@ -1,0 +1,12 @@
+{
+  "name": "instagram-account-switcher",
+  "version": "1.0.0",
+  "description": "Локальный менеджер для быстрого переключения между несколькими залогиненными Instagram-аккаунтами. Никакой автоматизации — только удобное переключение сессий, всё делает человек вручную.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

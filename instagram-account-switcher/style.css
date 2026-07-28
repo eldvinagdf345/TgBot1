@@ -1,0 +1,63 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", sans-serif;
+  background: #0A0D14;
+  color: #F1F5F9;
+  overflow: hidden;
+}
+
+#sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: 84px;
+  background: #111827;
+  border-right: 1px solid #1F2937;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 8px;
+}
+
+#accountList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  width: 100%;
+  align-items: center;
+}
+
+.slot {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: #1F2937;
+  color: #6B7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 16px;
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.slot:hover { background: #263042; color: #F1F5F9; }
+.slot.active { background: #2563EB; color: #fff; }
+
+#addBtn {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px dashed #1F2937;
+  color: #6B7280;
+  font-size: 22px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#addBtn:hover { border-color: #2563EB; color: #2563EB; }
