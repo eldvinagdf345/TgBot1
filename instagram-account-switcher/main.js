@@ -14,6 +14,20 @@ const views = new Map();
 let activeAccountId = null;
 let desktopUA = null;
 
+// На части Windows-машин (виртуалки, RDP, старые/кривые видеодрайверы)
+// GPU-процесс Chromium падает молча, и окно просто никогда не появляется
+// без единой ошибки в консоли или в журнале событий Windows.
+app.disableHardwareAcceleration();
+
+const CRASH_LOG = path.join(app.getPath("userData"), "crash.log");
+function logCrash(err) {
+  try {
+    fs.appendFileSync(CRASH_LOG, `${new Date().toISOString()} ${err?.stack || err}\n`);
+  } catch {}
+}
+process.on("uncaughtException", logCrash);
+process.on("unhandledRejection", logCrash);
+
 function loadAccounts() {
   try {
     accounts = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, "utf-8"));
