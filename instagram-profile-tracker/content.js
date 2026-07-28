@@ -44,17 +44,58 @@ function extractLinksFromSelection(selection) {
   return usernames;
 }
 
-function extractFromPlainText(selection) {
+function relativeLuminance(r, g, b) {
+  const srgb = [r, g, b].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+}
+
+// Instagram красит ник почти белым (главный текст), а имя под ним —
+// приглушённым серым и/или с пониженной прозрачностью (второстепенный
+// текст). Charset у имени вроде "DS" может случайно совпасть с шаблоном
+// ника, поэтому дополнительно смотрим на реальный цвет текста в DOM.
+function isMutedText(el) {
+  const style = getComputedStyle(el);
+  const match = style.color.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+  if (!match) return false;
+  const r = Number(match[1]);
+  const g = Number(match[2]);
+  const b = Number(match[3]);
+  const a = match[4] === undefined ? 1 : Number(match[4]);
+  const luminance = relativeLuminance(r, g, b) * a;
+  const opacity = parseFloat(style.opacity);
+  return luminance < 0.45 || (!Number.isNaN(opacity) && opacity < 0.75);
+}
+
+function extractFromTextNodes(selection) {
   const usernames = new Set();
-  const text = selection.toString();
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  for (const line of lines) {
-    if (!USERNAME_LINE_RE.test(line)) continue;
-    if (STOPWORDS.has(line.toLowerCase())) continue;
-    usernames.add(line);
+
+  for (let i = 0; i < selection.rangeCount; i++) {
+    const range = selection.getRangeAt(i);
+    let root = range.commonAncestorContainer;
+    if (root.nodeType === Node.TEXT_NODE) root = root.parentElement;
+    if (!root) continue;
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+        return selection.containsNode(node, true)
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
+      },
+    });
+
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = node.textContent.trim();
+      if (!USERNAME_LINE_RE.test(text)) continue;
+      if (STOPWORDS.has(text.toLowerCase())) continue;
+      const el = node.parentElement;
+      if (el && isMutedText(el)) continue; // похоже на имя, а не на ник
+      usernames.add(text);
+    }
   }
   return usernames;
 }
@@ -67,7 +108,7 @@ function extractUsernamesFromSelection() {
 
   let usernames = extractLinksFromSelection(selection);
   if (usernames.size === 0) {
-    usernames = extractFromPlainText(selection);
+    usernames = extractFromTextNodes(selection);
   }
 
   if (usernames.size === 0) {
