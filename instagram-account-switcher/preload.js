@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld("accountsAPI", {
   togglePin: (id) => ipcRenderer.invoke("accounts:togglePin", id),
   toggleMobile: (id) => ipcRenderer.invoke("accounts:toggleMobile", id),
   remove: (id) => ipcRenderer.invoke("accounts:remove", id),
+  openPool: () => ipcRenderer.invoke("pool:openWindow"),
 });

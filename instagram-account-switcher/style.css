@@ -71,6 +71,19 @@ body {
 }
 #addBtn:hover { border-color: #2563EB; color: #2563EB; }
 
+#poolBtn {
+  width: 52px;
+  height: 40px;
+  border-radius: 12px;
+  background: #1F2937;
+  border: none;
+  color: #F1F5F9;
+  font-size: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#poolBtn:hover { background: #263042; }
+
 #topbar {
   position: fixed;
   top: 0;
@@ -130,3 +143,103 @@ body {
 }
 .ctx-item:hover { background: #1F2937; }
 .ctx-item.ctx-danger { color: #EF4444; }
+
+.pool-body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 10px;
+  gap: 8px;
+}
+
+#poolList {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pool-empty {
+  color: #6B7280;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.pool-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #111827;
+  border: 1px solid #1F2937;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.pool-item:hover { background: #1F2937; }
+
+.pool-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.pool-badge {
+  flex-shrink: 0;
+  background: #2563EB;
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.pool-del {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #6B7280;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+.pool-del:hover { color: #EF4444; }
+
+#poolAddRow {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+#poolAddRow input {
+  width: auto;
+  margin-bottom: 0;
+}
+#poolUrlInput { flex: 2; min-width: 0; }
+#poolNumInput { flex: 1; min-width: 0; }
+#poolAddBtn {
+  flex-shrink: 0;
+  width: 36px;
+  background: #2563EB;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.pool-status {
+  position: fixed;
+  bottom: 8px;
+  left: 10px;
+  right: 10px;
+  background: #1F2937;
+  color: #EF4444;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: opacity .2s;
+  text-align: center;
+}

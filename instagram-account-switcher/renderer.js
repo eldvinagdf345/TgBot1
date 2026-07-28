@@ -109,6 +109,10 @@ document.getElementById("addBtn").addEventListener("click", async () => {
   renderTopbar();
 });
 
+document.getElementById("poolBtn").addEventListener("click", () => {
+  window.accountsAPI.openPool();
+});
+
 (async () => {
   accounts = await window.accountsAPI.list();
   if (accounts.length > 0) activeId = accounts[0].id;

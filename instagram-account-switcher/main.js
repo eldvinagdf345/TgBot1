@@ -5,11 +5,14 @@ const fs = require("fs");
 const SIDEBAR_WIDTH = 84;
 const TOPBAR_HEIGHT = 40;
 const ACCOUNTS_FILE = path.join(app.getPath("userData"), "accounts.json");
+const POOL_FILE = path.join(app.getPath("userData"), "pool.json");
 const MOBILE_UA =
   "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
 
 let mainWindow;
+let poolWindow = null;
 let accounts = [];
+let poolLinks = [];
 const views = new Map();
 let activeAccountId = null;
 let desktopUA = null;
@@ -42,6 +45,28 @@ function loadAccounts() {
 
 function saveAccounts() {
   fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+}
+
+function loadPool() {
+  try {
+    poolLinks = JSON.parse(fs.readFileSync(POOL_FILE, "utf-8"));
+  } catch {
+    poolLinks = [];
+  }
+}
+
+function savePool() {
+  fs.writeFileSync(POOL_FILE, JSON.stringify(poolLinks, null, 2));
+}
+
+// Принимает голый ник, "@ник" или полную ссылку и приводит к виду
+// https://www.instagram.com/ник/
+function normalizeInstagramUrl(input) {
+  let s = String(input || "").trim().replace(/^@/, "");
+  if (/^https?:\/\//i.test(s)) return s;
+  s = s.replace(/^(www\.)?instagram\.com\//i, "");
+  s = s.split("/")[0].split("?")[0];
+  return `https://www.instagram.com/${s}/`;
 }
 
 function createWindow() {
@@ -131,9 +156,52 @@ function switchTo(accountId) {
   activeAccountId = accountId;
 }
 
+function createPoolWindow() {
+  if (poolWindow && !poolWindow.isDestroyed()) {
+    poolWindow.show();
+    poolWindow.focus();
+    return;
+  }
+  poolWindow = new BrowserWindow({
+    width: 320,
+    height: 440,
+    alwaysOnTop: true,
+    title: "Пул клиентов",
+    backgroundColor: "#0A0D14",
+    webPreferences: {
+      preload: path.join(__dirname, "pool-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  poolWindow.loadFile("pool-window.html");
+  poolWindow.on("closed", () => {
+    poolWindow = null;
+  });
+}
+
+// Клик по ссылке в пуле: переключить главное окно на аккаунт с нужным
+// номером и открыть в нём профиль клиента. Если такого номера среди
+// подключённых аккаунтов нет — вернуть ошибку, ничего не переключая.
+function openPoolLink(id) {
+  const link = poolLinks.find((l) => l.id === id);
+  if (!link) return { ok: false, error: "Ссылка не найдена" };
+
+  const account = accounts.find((a) => a.number === link.targetNumber);
+  if (!account) return { ok: false, error: `Аккаунт ${link.targetNumber} не подключен` };
+
+  switchTo(account.id);
+  const view = views.get(account.id);
+  if (view) view.webContents.loadURL(normalizeInstagramUrl(link.url));
+  mainWindow.show();
+  mainWindow.focus();
+  return { ok: true };
+}
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   loadAccounts();
+  loadPool();
   createWindow();
   if (accounts.length > 0) switchTo(accounts[0].id);
 });
@@ -141,7 +209,9 @@ app.whenReady().then(() => {
 ipcMain.handle("accounts:list", () => accounts);
 
 ipcMain.handle("accounts:add", () => {
-  const number = accounts.length + 1;
+  // Не accounts.length+1 — после удалений номера могли бы столкнуться
+  // (пул привязывается именно к номеру, коллизия там недопустима).
+  const number = accounts.reduce((max, a) => Math.max(max, a.number), 0) + 1;
   const id = `acct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   accounts.push({
     id,
@@ -212,6 +282,37 @@ ipcMain.handle("accounts:remove", async (_e, accountId) => {
     if (accounts.length > 0) switchTo(accounts[0].id);
   }
   return { accounts, activeAccountId };
+});
+
+ipcMain.handle("pool:list", () => poolLinks);
+
+ipcMain.handle("pool:add", (_e, url, targetNumber) => {
+  const id = `link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  poolLinks.push({ id, url: String(url).trim(), targetNumber: Number(targetNumber) });
+  savePool();
+  return poolLinks;
+});
+
+ipcMain.handle("pool:update", (_e, id, patch) => {
+  const link = poolLinks.find((l) => l.id === id);
+  if (link) {
+    if (patch.url !== undefined) link.url = String(patch.url).trim();
+    if (patch.targetNumber !== undefined) link.targetNumber = Number(patch.targetNumber);
+    savePool();
+  }
+  return poolLinks;
+});
+
+ipcMain.handle("pool:remove", (_e, id) => {
+  poolLinks = poolLinks.filter((l) => l.id !== id);
+  savePool();
+  return poolLinks;
+});
+
+ipcMain.handle("pool:open", (_e, id) => openPoolLink(id));
+
+ipcMain.handle("pool:openWindow", () => {
+  createPoolWindow();
 });
 
 app.on("window-all-closed", () => {
