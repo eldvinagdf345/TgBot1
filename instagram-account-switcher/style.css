@@ -31,6 +31,7 @@ body {
 }
 
 .slot {
+  position: relative;
   width: 52px;
   height: 52px;
   border-radius: 12px;
@@ -49,6 +50,14 @@ body {
 .slot:hover { background: #263042; color: #F1F5F9; }
 .slot.active { background: #2563EB; color: #fff; }
 
+.pin-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 12px;
+  filter: drop-shadow(0 0 2px #0A0D14);
+}
+
 #addBtn {
   width: 52px;
   height: 52px;
@@ -61,3 +70,63 @@ body {
   flex-shrink: 0;
 }
 #addBtn:hover { border-color: #2563EB; color: #2563EB; }
+
+#topbar {
+  position: fixed;
+  top: 0;
+  left: 84px;
+  right: 0;
+  height: 40px;
+  background: #111827;
+  border-bottom: 1px solid #1F2937;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  gap: 12px;
+}
+
+#activeLabel {
+  font-size: 12px;
+  color: #6B7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#mobileToggleBtn {
+  flex-shrink: 0;
+  background: #1F2937;
+  color: #F1F5F9;
+  border: 1px solid #263042;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#mobileToggleBtn:hover { background: #263042; }
+#mobileToggleBtn.active {
+  background: #2563EB;
+  border-color: #2563EB;
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  background: #111827;
+  border: 1px solid #1F2937;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+
+.ctx-item {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #F1F5F9;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ctx-item:hover { background: #1F2937; }
+.ctx-item.ctx-danger { color: #EF4444; }

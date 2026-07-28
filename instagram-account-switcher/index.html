@@ -10,6 +10,19 @@
     <div id="accountList"></div>
     <button id="addBtn" title="Добавить аккаунт">+</button>
   </div>
+
+  <div id="topbar">
+    <span id="activeLabel"></span>
+    <button id="mobileToggleBtn" title="Мобильный вид (как Toggle device toolbar в DevTools)">
+      📱 Мобильный вид
+    </button>
+  </div>
+
+  <div id="ctxMenu" class="ctx-menu" hidden>
+    <div class="ctx-item" id="ctxPin"></div>
+    <div class="ctx-item ctx-danger" id="ctxDelete">🗑 Удалить</div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>
