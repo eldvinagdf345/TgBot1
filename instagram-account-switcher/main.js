@@ -79,21 +79,32 @@ function positionView(accountId) {
 // Мобильный режим = мобильный вьюпорт + мобильный User-Agent, аналог
 // "Toggle device toolbar" в DevTools. Полезно, потому что у Instagram
 // мобильная веб-версия заметно функциональнее в директе, чем десктопная.
+// disableDeviceEmulation() вызываем только если эмуляция реально была
+// включена раньше — на "чистом" view (никогда не включали) это на части
+// Windows-машин роняло процесс на нативном уровне, минуя uncaughtException.
+const emulatedViews = new WeakSet();
+
 function applyMobileMode(view, enabled) {
-  if (!desktopUA) desktopUA = view.webContents.getUserAgent();
-  if (enabled) {
-    view.webContents.setUserAgent(MOBILE_UA);
-    view.webContents.enableDeviceEmulation({
-      screenPosition: "mobile",
-      screenSize: { width: 420, height: 900 },
-      viewPosition: { x: 0, y: 0 },
-      deviceScaleFactor: 2,
-      viewSize: { width: 420, height: 900 },
-      scale: 1,
-    });
-  } else {
-    view.webContents.setUserAgent(desktopUA);
-    view.webContents.disableDeviceEmulation();
+  try {
+    if (!desktopUA) desktopUA = view.webContents.getUserAgent();
+    if (enabled) {
+      view.webContents.setUserAgent(MOBILE_UA);
+      view.webContents.enableDeviceEmulation({
+        screenPosition: "mobile",
+        screenSize: { width: 420, height: 900 },
+        viewPosition: { x: 0, y: 0 },
+        deviceScaleFactor: 2,
+        viewSize: { width: 420, height: 900 },
+        scale: 1,
+      });
+      emulatedViews.add(view);
+    } else if (emulatedViews.has(view)) {
+      view.webContents.setUserAgent(desktopUA);
+      view.webContents.disableDeviceEmulation();
+      emulatedViews.delete(view);
+    }
+  } catch (err) {
+    logCrash(err);
   }
 }
 
@@ -105,7 +116,7 @@ function ensureView(account) {
   const view = new BrowserView({
     webPreferences: { partition: account.partition, contextIsolation: true },
   });
-  applyMobileMode(view, !!account.mobileMode);
+  if (account.mobileMode) applyMobileMode(view, true);
   view.webContents.loadURL("https://www.instagram.com/");
   views.set(account.id, view);
   return view;
