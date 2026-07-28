@@ -48,3 +48,50 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse(extractUsernamesFromSelection());
   }
 });
+
+// Горячая клавиша: выделил список профилей на странице → нажал L → ники
+// добавлены, без похода в попап расширения.
+let toastEl = null;
+function showToast(text, isError) {
+  if (!toastEl) {
+    toastEl = document.createElement("div");
+    toastEl.style.cssText = [
+      "position:fixed", "bottom:24px", "right:24px", "z-index:2147483647",
+      "background:#111827", "border:1px solid #1F2937", "border-radius:8px",
+      "padding:10px 14px", "font:13px 'Segoe UI',sans-serif",
+      "box-shadow:0 4px 16px rgba(0,0,0,.4)", "transition:opacity .2s",
+      "pointer-events:none",
+    ].join(";");
+    document.body.appendChild(toastEl);
+  }
+  toastEl.style.color = isError ? "#EF4444" : "#F1F5F9";
+  toastEl.textContent = text;
+  toastEl.style.opacity = "1";
+  clearTimeout(toastEl._hideTimer);
+  toastEl._hideTimer = setTimeout(() => {
+    toastEl.style.opacity = "0";
+  }, 2200);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() !== "l") return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  const active = document.activeElement;
+  const isEditable =
+    active &&
+    (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
+  if (isEditable) return;
+
+  const result = extractUsernamesFromSelection();
+  if (result.error) {
+    showToast(result.error, true);
+    return;
+  }
+
+  chrome.runtime.sendMessage({ type: "ADD_USERNAMES", usernames: result.usernames }, (res) => {
+    const added = res?.added || 0;
+    const skipped = result.usernames.length - added;
+    showToast(`✅ Добавлено: ${added}` + (skipped > 0 ? ` (уже было: ${skipped})` : ""));
+  });
+});
