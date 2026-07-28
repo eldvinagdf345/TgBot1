@@ -3,7 +3,7 @@
   "name": "Instagram Profile Tracker → Telegram",
   "version": "1.0.0",
   "description": "Запоминает никнеймы Instagram-профилей, которые вы посещаете, и отправляет список в вашего Telegram-бота.",
-  "permissions": ["storage", "webNavigation"],
+  "permissions": ["storage", "webNavigation", "activeTab"],
   "host_permissions": [
     "https://www.instagram.com/*",
     "https://api.telegram.org/*"
@@ -11,6 +11,13 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Instagram Profile Tracker"

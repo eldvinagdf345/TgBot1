@@ -115,4 +115,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     });
     return true;
   }
+  if (msg.type === "ADD_USERNAMES") {
+    (async () => {
+      const { profiles = [] } = await chrome.storage.local.get("profiles");
+      const existing = new Set(profiles.map((p) => p.username.toLowerCase()));
+      let added = 0;
+      for (const username of msg.usernames) {
+        const key = username.toLowerCase();
+        if (existing.has(key)) continue;
+        existing.add(key);
+        profiles.push({ username, addedAt: Date.now() });
+        added++;
+      }
+      if (added > 0) {
+        await chrome.storage.local.set({ profiles });
+        updateBadge(profiles.length);
+      }
+      sendResponse({ ok: true, added });
+    })();
+    return true;
+  }
 });

@@ -63,6 +63,34 @@ document.getElementById("optionsBtn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
+document.getElementById("captureBtn").addEventListener("click", async () => {
+  setStatus("Считываю выделение...");
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.id) {
+    setStatus("Не удалось определить активную вкладку.");
+    return;
+  }
+  chrome.tabs.sendMessage(tab.id, { type: "READ_SELECTION" }, async (response) => {
+    if (chrome.runtime.lastError) {
+      setStatus("❌ Открой страницу instagram.com и попробуй снова.");
+      return;
+    }
+    if (!response || response.error) {
+      setStatus(response?.error || "Ничего не найдено.");
+      return;
+    }
+    const res = await chrome.runtime.sendMessage({
+      type: "ADD_USERNAMES",
+      usernames: response.usernames,
+    });
+    const skipped = response.usernames.length - res.added;
+    setStatus(
+      `✅ Добавлено: ${res.added}` + (skipped > 0 ? ` (уже было: ${skipped})` : "")
+    );
+    render();
+  });
+});
+
 async function loadSendAsLink() {
   const { sendAsLink = false } = await chrome.storage.local.get("sendAsLink");
   document.getElementById("sendAsLink").checked = sendAsLink;
