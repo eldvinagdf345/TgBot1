@@ -141,9 +141,15 @@ function ensureView(account) {
   const view = new BrowserView({
     webPreferences: { partition: account.partition, contextIsolation: true },
   });
-  if (account.mobileMode) applyMobileMode(view, true);
-  view.webContents.loadURL("https://www.instagram.com/");
   views.set(account.id, view);
+  if (account.mobileMode) {
+    // enableDeviceEmulation на только что созданном view, у которого ещё
+    // не было ни одной навигации, — судя по всему, ещё один способ уронить
+    // процесс на этой машине так же тихо, как было с disableDeviceEmulation.
+    // Откладываем до момента, когда страница реально начала грузиться.
+    view.webContents.once("dom-ready", () => applyMobileMode(view, true));
+  }
+  view.webContents.loadURL("https://www.instagram.com/");
   return view;
 }
 
