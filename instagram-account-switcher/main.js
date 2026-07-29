@@ -40,6 +40,7 @@ function loadAccounts() {
   accounts.forEach((a) => {
     if (a.pinned === undefined) a.pinned = false;
     if (a.mobileMode === undefined) a.mobileMode = false;
+    if (a.visitCount === undefined) a.visitCount = 0;
   });
 }
 
@@ -167,6 +168,12 @@ function switchTo(accountId) {
   }
 }
 
+function broadcastAccounts() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("accounts:updated", accounts);
+  }
+}
+
 function createPoolWindow() {
   if (poolWindow && !poolWindow.isDestroyed()) {
     poolWindow.show();
@@ -216,6 +223,11 @@ function openPoolLink(id) {
   if (view) view.webContents.loadURL(normalizeInstagramUrl(link.url));
   mainWindow.show();
   mainWindow.focus();
+
+  account.visitCount = (account.visitCount || 0) + 1;
+  saveAccounts();
+  broadcastAccounts();
+
   return { ok: true };
 }
 
@@ -241,6 +253,7 @@ ipcMain.handle("accounts:add", () => {
     partition: `persist:${id}`,
     pinned: false,
     mobileMode: false,
+    visitCount: 0,
   });
   saveAccounts();
   switchTo(id);

@@ -7,6 +7,12 @@ function sortedAccounts() {
   return [...accounts].sort((a, b) => (b.pinned === true) - (a.pinned === true));
 }
 
+function countClass(n) {
+  if (n >= 10) return "count-red";
+  if (n >= 6) return "count-orange";
+  return "count-green";
+}
+
 function render() {
   const list = document.getElementById("accountList");
   list.innerHTML = "";
@@ -14,8 +20,22 @@ function render() {
   sortedAccounts().forEach((acc) => {
     const item = document.createElement("div");
     item.className = "slot" + (acc.id === activeId ? " active" : "");
-    item.textContent = acc.number;
     item.title = acc.label;
+
+    const numberEl = document.createElement("div");
+    numberEl.className = "slot-number";
+    numberEl.textContent = acc.number;
+    item.appendChild(numberEl);
+
+    const divider = document.createElement("div");
+    divider.className = "slot-divider";
+    item.appendChild(divider);
+
+    const count = acc.visitCount || 0;
+    const countEl = document.createElement("div");
+    countEl.className = `slot-count ${countClass(count)}`;
+    countEl.textContent = count;
+    item.appendChild(countEl);
 
     if (acc.pinned) {
       const pin = document.createElement("span");
@@ -115,6 +135,12 @@ document.getElementById("poolBtn").addEventListener("click", () => {
 
 window.accountsAPI.onActiveChanged((id) => {
   activeId = id;
+  render();
+  renderTopbar();
+});
+
+window.accountsAPI.onAccountsUpdated((accts) => {
+  accounts = accts;
   render();
   renderTopbar();
 });

@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld("accountsAPI", {
   remove: (id) => ipcRenderer.invoke("accounts:remove", id),
   openPool: () => ipcRenderer.invoke("pool:openWindow"),
   onActiveChanged: (cb) => ipcRenderer.on("accounts:activeChanged", (_e, id) => cb(id)),
+  onAccountsUpdated: (cb) => ipcRenderer.on("accounts:updated", (_e, accts) => cb(accts)),
 });
