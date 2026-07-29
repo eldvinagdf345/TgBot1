@@ -140,23 +140,12 @@ function applyMobileMode(view, enabled) {
       dbg
         .sendCommand("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 })
         .catch(logCrash);
-      // DevTools всегда шлёт это вместе с device metrics override — без
-      // этого клики мышью не превращаются в touch-события, а часть
-      // сенсорных функций Instagram (например, стикер "Ссылка" в истории)
-      // проверяет именно наличие touch, а не просто ширину экрана.
-      dbg
-        .sendCommand("Emulation.setEmitTouchEventsForMouse", {
-          enabled: true,
-          configuration: "mobile",
-        })
-        .catch(logCrash);
       emulatedViews.add(view);
     } else if (emulatedViews.has(view)) {
       view.webContents.setUserAgent(desktopUA);
       if (dbg.isAttached()) {
         dbg.sendCommand("Emulation.clearDeviceMetricsOverride").catch(logCrash);
         dbg.sendCommand("Emulation.setTouchEmulationEnabled", { enabled: false }).catch(logCrash);
-        dbg.sendCommand("Emulation.setEmitTouchEventsForMouse", { enabled: false }).catch(logCrash);
         dbg.detach();
       }
       emulatedViews.delete(view);
