@@ -32,6 +32,18 @@
     <div class="ctx-item ctx-danger" id="ctxDelete">🗑 Удалить</div>
   </div>
 
+  <div id="ldIndexModal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-title">Номер инстанса LDPlayer</div>
+      <input id="ldIndexInput" type="number" min="0" placeholder="Например: 0" />
+      <div class="row">
+        <button id="ldIndexSaveBtn" class="primary">Сохранить</button>
+        <button id="ldIndexClearBtn">Снять привязку</button>
+        <button id="ldIndexCancelBtn">Отмена</button>
+      </div>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

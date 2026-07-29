@@ -103,24 +103,49 @@ document.getElementById("ctxPin").addEventListener("click", async () => {
   render();
 });
 
-document.getElementById("ctxLdIndex").addEventListener("click", async () => {
+let ldIndexTargetId = null;
+
+function openLdIndexModal(accountId) {
+  ldIndexTargetId = accountId;
+  const acc = accounts.find((a) => a.id === accountId);
+  document.getElementById("ldIndexInput").value =
+    acc && acc.ldIndex !== null && acc.ldIndex !== undefined ? acc.ldIndex : "";
+  document.getElementById("ldIndexModal").hidden = false;
+  window.accountsAPI.setBrowserViewVisible(false);
+}
+
+function closeLdIndexModal() {
+  document.getElementById("ldIndexModal").hidden = true;
+  ldIndexTargetId = null;
+  window.accountsAPI.setBrowserViewVisible(true);
+}
+
+document.getElementById("ctxLdIndex").addEventListener("click", () => {
   if (!ctxAccountId) return;
   const targetId = ctxAccountId; // closeCtxMenu() ниже обнуляет ctxAccountId
-  const acc = accounts.find((a) => a.id === targetId);
   closeCtxMenu();
-  const raw = prompt(
-    "Номер инстанса LDPlayer для этого аккаунта (--index в ldconsole.exe), пусто — снять привязку:",
-    acc && acc.ldIndex !== null && acc.ldIndex !== undefined ? String(acc.ldIndex) : ""
-  );
-  if (raw === null) return;
-  accounts = await window.accountsAPI.setLdIndex(targetId, raw.trim() === "" ? null : raw.trim());
+  openLdIndexModal(targetId);
+});
+
+document.getElementById("ldIndexSaveBtn").addEventListener("click", async () => {
+  if (!ldIndexTargetId) return;
+  const targetId = ldIndexTargetId;
+  const raw = document.getElementById("ldIndexInput").value.trim();
+  accounts = await window.accountsAPI.setLdIndex(targetId, raw === "" ? null : raw);
+  closeLdIndexModal();
   render();
-  const updated = accounts.find((a) => a.id === targetId);
-  alert(
-    updated && updated.ldIndex !== null && updated.ldIndex !== undefined
-      ? `Сохранено: инстанс №${updated.ldIndex}`
-      : "Привязка снята"
-  );
+});
+
+document.getElementById("ldIndexClearBtn").addEventListener("click", async () => {
+  if (!ldIndexTargetId) return;
+  const targetId = ldIndexTargetId;
+  accounts = await window.accountsAPI.setLdIndex(targetId, null);
+  closeLdIndexModal();
+  render();
+});
+
+document.getElementById("ldIndexCancelBtn").addEventListener("click", () => {
+  closeLdIndexModal();
 });
 
 document.getElementById("ctxDelete").addEventListener("click", async () => {

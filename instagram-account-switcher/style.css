@@ -350,3 +350,52 @@ body {
 }
 .bulk-panel .row button.primary { background: #2563EB; color: #fff; }
 .bulk-panel .row button:not(.primary) { background: #1F2937; color: #F1F5F9; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal-box {
+  background: #111827;
+  border: 1px solid #1F2937;
+  border-radius: 12px;
+  padding: 20px;
+  width: 280px;
+}
+
+.modal-title {
+  color: #F1F5F9;
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+
+.modal-box input {
+  width: 100%;
+  background: #0A0D14;
+  border: 1px solid #1F2937;
+  border-radius: 8px;
+  color: #F1F5F9;
+  padding: 8px 10px;
+  font-size: 13px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+}
+
+.modal-box .row { display: flex; gap: 8px; }
+.modal-box .row button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+.modal-box .row button.primary { background: #2563EB; color: #fff; }
+.modal-box .row button:not(.primary) { background: #1F2937; color: #F1F5F9; }
