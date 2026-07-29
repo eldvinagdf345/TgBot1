@@ -243,3 +243,51 @@ body {
   transition: opacity .2s;
   text-align: center;
 }
+
+.pool-badge-muted {
+  background: #1F2937 !important;
+  color: #6B7280 !important;
+}
+
+.pool-link-btn {
+  background: transparent;
+  border: none;
+  color: #6B7280;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+}
+.pool-link-btn:hover { color: #2563EB; }
+
+.bulk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #111827;
+  border: 1px solid #1F2937;
+  border-radius: 8px;
+  padding: 8px;
+}
+.bulk-panel textarea {
+  width: 100%;
+  resize: vertical;
+  background: #0A0D14;
+  border: 1px solid #1F2937;
+  border-radius: 6px;
+  color: #F1F5F9;
+  font-size: 11px;
+  padding: 6px;
+  font-family: "Segoe UI", sans-serif;
+}
+.bulk-panel .row { display: flex; gap: 6px; }
+.bulk-panel .row button {
+  flex: 1;
+  padding: 6px;
+  font-size: 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: none;
+}
+.bulk-panel .row button.primary { background: #2563EB; color: #fff; }
+.bulk-panel .row button:not(.primary) { background: #1F2937; color: #F1F5F9; }

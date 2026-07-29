@@ -18,7 +18,7 @@ async function render() {
   list.innerHTML = "";
 
   if (links.length === 0) {
-    list.innerHTML = '<div class="pool-empty">Пул пуст. Добавь ссылку снизу.</div>';
+    list.innerHTML = '<div class="pool-empty">Пул пуст. Добавь ссылки снизу.</div>';
     return;
   }
 
@@ -32,8 +32,12 @@ async function render() {
     label.title = "Клик — открыть, двойной клик — изменить";
 
     const badge = document.createElement("span");
-    badge.className = "pool-badge";
-    badge.textContent = `#${link.targetNumber}`;
+    const hasTarget = link.targetNumber !== null && link.targetNumber !== undefined;
+    badge.className = "pool-badge" + (hasTarget ? "" : " pool-badge-muted");
+    badge.textContent = hasTarget ? `#${link.targetNumber}` : "тек.";
+    badge.title = hasTarget
+      ? `Откроется с аккаунта №${link.targetNumber}`
+      : "Откроется с текущего активного аккаунта";
 
     const delBtn = document.createElement("button");
     delBtn.className = "pool-del";
@@ -54,9 +58,13 @@ async function render() {
       e.stopPropagation();
       const newUrl = prompt("Ник/ссылка:", link.url);
       if (newUrl === null) return;
-      const newNum = prompt("Номер аккаунта:", link.targetNumber);
-      if (newNum === null) return;
-      await window.poolAPI.update(link.id, { url: newUrl.trim(), targetNumber: Number(newNum) });
+      const newNumRaw = prompt(
+        "Номер аккаунта (оставь пустым — текущий активный):",
+        hasTarget ? String(link.targetNumber) : ""
+      );
+      if (newNumRaw === null) return;
+      const newNum = newNumRaw.trim() === "" ? null : Number(newNumRaw);
+      await window.poolAPI.update(link.id, { url: newUrl.trim(), targetNumber: newNum });
       render();
     });
 
@@ -74,14 +82,53 @@ document.getElementById("poolAddBtn").addEventListener("click", async () => {
   const urlInput = document.getElementById("poolUrlInput");
   const numInput = document.getElementById("poolNumInput");
   const url = urlInput.value.trim();
-  const num = Number(numInput.value);
-  if (!url || !num) {
-    showStatus("Укажи ссылку и номер аккаунта");
+  const numRaw = numInput.value.trim();
+  if (!url) {
+    showStatus("Укажи ссылку");
     return;
   }
+  const num = numRaw === "" ? null : Number(numRaw);
   await window.poolAPI.add(url, num);
   urlInput.value = "";
   numInput.value = "";
+  render();
+});
+
+document.getElementById("bulkToggleBtn").addEventListener("click", () => {
+  document.getElementById("bulkPanel").hidden = !document.getElementById("bulkPanel").hidden;
+});
+
+document.getElementById("bulkCancelBtn").addEventListener("click", () => {
+  document.getElementById("bulkPanel").hidden = true;
+});
+
+document.getElementById("bulkAddBtn").addEventListener("click", async () => {
+  const linksRaw = document.getElementById("bulkLinks").value;
+  const numsRaw = document.getElementById("bulkNumbers").value;
+
+  const links = linksRaw
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const nums = numsRaw.split(/\r?\n/).map((s) => s.trim());
+
+  if (links.length === 0) {
+    showStatus("Список ссылок пуст");
+    return;
+  }
+
+  // Номера привязываются к ссылкам по порядку — N-я строка номеров к N-й
+  // ссылке. Если номеров меньше или строка пустая — эта ссылка остаётся
+  // без привязки (откроется с текущего активного аккаунта).
+  const items = links.map((url, i) => ({
+    url,
+    targetNumber: nums[i] && nums[i] !== "" ? Number(nums[i]) : null,
+  }));
+
+  await window.poolAPI.addBulk(items);
+  document.getElementById("bulkLinks").value = "";
+  document.getElementById("bulkNumbers").value = "";
+  document.getElementById("bulkPanel").hidden = true;
   render();
 });
 

@@ -7,11 +7,27 @@
 </head>
 <body class="pool-body">
   <div id="poolList"></div>
+
+  <div id="bulkPanel" class="bulk-panel" hidden>
+    <textarea id="bulkLinks" rows="4" placeholder="Ссылки/ники, по одной на строку"></textarea>
+    <textarea
+      id="bulkNumbers"
+      rows="3"
+      placeholder="Номера аккаунтов по порядку (необязательно, можно короче списка ссылок или пустыми строками)"
+    ></textarea>
+    <div class="row">
+      <button id="bulkAddBtn" class="primary">Добавить список</button>
+      <button id="bulkCancelBtn">Отмена</button>
+    </div>
+  </div>
+
   <div id="poolAddRow">
     <input id="poolUrlInput" placeholder="ник или ссылка" />
-    <input id="poolNumInput" type="number" min="1" placeholder="№" />
+    <input id="poolNumInput" type="number" min="1" placeholder="№ (необяз.)" />
     <button id="poolAddBtn">+</button>
   </div>
+  <button id="bulkToggleBtn" class="pool-link-btn">📋 Вставить списком</button>
+
   <script src="pool-renderer.js"></script>
 </body>
 </html>

@@ -194,12 +194,22 @@ function createPoolWindow() {
 // Клик по ссылке в пуле: переключить главное окно на аккаунт с нужным
 // номером и открыть в нём профиль клиента. Если такого номера среди
 // подключённых аккаунтов нет — вернуть ошибку, ничего не переключая.
+// Ссылка без привязанного номера открывается с текущего активного аккаунта.
 function openPoolLink(id) {
   const link = poolLinks.find((l) => l.id === id);
   if (!link) return { ok: false, error: "Ссылка не найдена" };
 
-  const account = accounts.find((a) => a.number === link.targetNumber);
-  if (!account) return { ok: false, error: `Аккаунт ${link.targetNumber} не подключен` };
+  const hasTarget = link.targetNumber !== null && link.targetNumber !== undefined;
+  const account = hasTarget
+    ? accounts.find((a) => a.number === link.targetNumber)
+    : accounts.find((a) => a.id === activeAccountId);
+
+  if (!account) {
+    return {
+      ok: false,
+      error: hasTarget ? `Аккаунт ${link.targetNumber} не подключен` : "Нет активного аккаунта",
+    };
+  }
 
   switchTo(account.id);
   const view = views.get(account.id);
@@ -297,9 +307,30 @@ ipcMain.handle("accounts:remove", async (_e, accountId) => {
 
 ipcMain.handle("pool:list", () => poolLinks);
 
+function normalizeTargetNumber(n) {
+  return n === null || n === undefined || n === "" ? null : Number(n);
+}
+
 ipcMain.handle("pool:add", (_e, url, targetNumber) => {
   const id = `link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  poolLinks.push({ id, url: String(url).trim(), targetNumber: Number(targetNumber) });
+  poolLinks.push({
+    id,
+    url: String(url).trim(),
+    targetNumber: normalizeTargetNumber(targetNumber),
+  });
+  savePool();
+  return poolLinks;
+});
+
+ipcMain.handle("pool:addBulk", (_e, items) => {
+  items.forEach((item, i) => {
+    const id = `link-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`;
+    poolLinks.push({
+      id,
+      url: String(item.url).trim(),
+      targetNumber: normalizeTargetNumber(item.targetNumber),
+    });
+  });
   savePool();
   return poolLinks;
 });
@@ -308,7 +339,7 @@ ipcMain.handle("pool:update", (_e, id, patch) => {
   const link = poolLinks.find((l) => l.id === id);
   if (link) {
     if (patch.url !== undefined) link.url = String(patch.url).trim();
-    if (patch.targetNumber !== undefined) link.targetNumber = Number(patch.targetNumber);
+    if (patch.targetNumber !== undefined) link.targetNumber = normalizeTargetNumber(patch.targetNumber);
     savePool();
   }
   return poolLinks;
