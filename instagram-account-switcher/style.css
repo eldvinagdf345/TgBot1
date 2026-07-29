@@ -360,6 +360,11 @@ body {
   justify-content: center;
   z-index: 2000;
 }
+/* .modal-overlay{display:flex} и стандартное [hidden]{display:none} имеют
+   одинаковую специфичность — без явного правила ниже наше display:flex
+   побеждало из-за порядка в файле, и невидимый на тёмном фоне оверлей
+   перехватывал все клики по всему окну, даже когда должен быть скрыт. */
+.modal-overlay[hidden] { display: none; }
 
 .modal-box {
   background: #111827;
