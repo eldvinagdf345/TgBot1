@@ -105,15 +105,22 @@ document.getElementById("ctxPin").addEventListener("click", async () => {
 
 document.getElementById("ctxLdIndex").addEventListener("click", async () => {
   if (!ctxAccountId) return;
-  const acc = accounts.find((a) => a.id === ctxAccountId);
+  const targetId = ctxAccountId; // closeCtxMenu() ниже обнуляет ctxAccountId
+  const acc = accounts.find((a) => a.id === targetId);
   closeCtxMenu();
   const raw = prompt(
     "Номер инстанса LDPlayer для этого аккаунта (--index в ldconsole.exe), пусто — снять привязку:",
     acc && acc.ldIndex !== null && acc.ldIndex !== undefined ? String(acc.ldIndex) : ""
   );
   if (raw === null) return;
-  accounts = await window.accountsAPI.setLdIndex(ctxAccountId, raw.trim() === "" ? null : raw.trim());
+  accounts = await window.accountsAPI.setLdIndex(targetId, raw.trim() === "" ? null : raw.trim());
   render();
+  const updated = accounts.find((a) => a.id === targetId);
+  alert(
+    updated && updated.ldIndex !== null && updated.ldIndex !== undefined
+      ? `Сохранено: инстанс №${updated.ldIndex}`
+      : "Привязка снята"
+  );
 });
 
 document.getElementById("ctxDelete").addEventListener("click", async () => {
