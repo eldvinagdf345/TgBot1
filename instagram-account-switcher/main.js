@@ -286,6 +286,11 @@ ipcMain.handle("accounts:switch", (_e, accountId) => {
   return activeAccountId;
 });
 
+ipcMain.handle("accounts:reload", (_e, accountId) => {
+  const view = views.get(accountId);
+  if (view) view.webContents.reload();
+});
+
 ipcMain.handle("accounts:rename", (_e, accountId, label) => {
   const account = accounts.find((a) => a.id === accountId);
   if (account) {

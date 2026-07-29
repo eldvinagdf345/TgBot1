@@ -115,6 +115,10 @@ function renderTopbar() {
   btn.classList.toggle("active", !!acc?.mobileMode);
 }
 
+document.getElementById("reloadBtn").addEventListener("click", () => {
+  if (activeId) window.accountsAPI.reload(activeId);
+});
+
 document.getElementById("mobileToggleBtn").addEventListener("click", async () => {
   if (!activeId) return;
   accounts = await window.accountsAPI.toggleMobile(activeId);

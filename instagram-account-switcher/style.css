@@ -130,6 +130,18 @@ body {
   white-space: nowrap;
 }
 
+#reloadBtn {
+  flex-shrink: 0;
+  background: #1F2937;
+  color: #F1F5F9;
+  border: 1px solid #263042;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+#reloadBtn:hover { background: #263042; }
+
 #mobileToggleBtn {
   flex-shrink: 0;
   background: #1F2937;
