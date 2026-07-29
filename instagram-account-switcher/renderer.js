@@ -113,6 +113,12 @@ document.getElementById("poolBtn").addEventListener("click", () => {
   window.accountsAPI.openPool();
 });
 
+window.accountsAPI.onActiveChanged((id) => {
+  activeId = id;
+  render();
+  renderTopbar();
+});
+
 (async () => {
   accounts = await window.accountsAPI.list();
   if (accounts.length > 0) activeId = accounts[0].id;

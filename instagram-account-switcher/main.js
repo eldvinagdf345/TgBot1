@@ -154,6 +154,11 @@ function switchTo(accountId) {
   mainWindow.setBrowserView(view);
   positionView(accountId);
   activeAccountId = accountId;
+  // Переключение может прийти не из сайдбара (например, из окна пула) —
+  // сайдбар должен узнать об этом сам, а не только тот, кто инициировал клик.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("accounts:activeChanged", accountId);
+  }
 }
 
 function createPoolWindow() {
