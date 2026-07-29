@@ -258,7 +258,11 @@ document.getElementById("settingsSaveBtn").addEventListener("click", async () =>
   if (!path) return;
   await window.accountsAPI.setSettings({ ldConsolePath: path });
   closeSettingsModal();
-  if (pendingEmulatorOpen) {
+  if (pendingEmulatorOpen === "ALL") {
+    pendingEmulatorOpen = null;
+    const res = await window.accountsAPI.openAllInEmulators();
+    alert(res.ok ? `Запущено: ${res.count}` : res.error);
+  } else if (pendingEmulatorOpen) {
     const id = pendingEmulatorOpen;
     pendingEmulatorOpen = null;
     const res = await window.accountsAPI.openInEmulator(id);
@@ -304,6 +308,17 @@ document.getElementById("addBtn").addEventListener("click", async () => {
 
 document.getElementById("poolBtn").addEventListener("click", () => {
   window.accountsAPI.openPool();
+});
+
+document.getElementById("launchAllBtn").addEventListener("click", async () => {
+  const settings = await window.accountsAPI.getSettings();
+  if (!settings.ldConsolePath) {
+    pendingEmulatorOpen = "ALL";
+    openSettingsModal();
+    return;
+  }
+  const res = await window.accountsAPI.openAllInEmulators();
+  alert(res.ok ? `Запущено: ${res.count}` : res.error);
 });
 
 window.accountsAPI.onActiveChanged((id) => {

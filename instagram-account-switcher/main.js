@@ -100,12 +100,32 @@ function openInEmulator(accountId) {
   return runLdconsole(["launch", "--index", String(ldIndex)]);
 }
 
-// Останавливает инстанс после того, как история выложена — освобождает
-// память компьютера, не держит запущенным то, что сейчас не нужно.
+// Останавливает инстанс — используется по желанию, если реально не хватает
+// памяти. По умолчанию быстрее оставлять инстансы запущенными: следующий
+// вход тогда мгновенный, без повторной холодной загрузки Android.
 function quitEmulator(accountId) {
   const { ldIndex, error } = accountLdIndexOrError(accountId);
   if (error) return Promise.resolve({ ok: false, error });
   return runLdconsole(["quit", "--index", String(ldIndex)]);
+}
+
+// Запускает разом все аккаунты с привязанным номером LDPlayer — чтобы
+// холодная загрузка Android шла параллельно в фоне у всех сразу, а не по
+// очереди, пока ждёшь каждую перед тем, как постить историю.
+function openAllInEmulators() {
+  const withLd = accounts.filter((a) => a.ldIndex !== null && a.ldIndex !== undefined);
+  if (withLd.length === 0) {
+    return Promise.resolve({ ok: false, error: "Ни у одного аккаунта не задан номер инстанса LDPlayer" });
+  }
+  return Promise.all(withLd.map((a) => runLdconsole(["launch", "--index", String(a.ldIndex)]))).then(
+    (results) => {
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        return { ok: false, error: `Не удалось запустить: ${failed.length} из ${withLd.length}` };
+      }
+      return { ok: true, count: withLd.length };
+    }
+  );
 }
 
 function loadPool() {
@@ -432,6 +452,7 @@ ipcMain.handle("accounts:setLdIndex", (_e, accountId, ldIndex) => {
 
 ipcMain.handle("accounts:openInEmulator", (_e, accountId) => openInEmulator(accountId));
 ipcMain.handle("accounts:quitEmulator", (_e, accountId) => quitEmulator(accountId));
+ipcMain.handle("accounts:openAllInEmulators", () => openAllInEmulators());
 
 ipcMain.handle("settings:get", () => settings);
 
