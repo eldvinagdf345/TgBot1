@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("accountsAPI", {
   remove: (id) => ipcRenderer.invoke("accounts:remove", id),
   setLdIndex: (id, ldIndex) => ipcRenderer.invoke("accounts:setLdIndex", id, ldIndex),
   openInEmulator: (id) => ipcRenderer.invoke("accounts:openInEmulator", id),
+  quitEmulator: (id) => ipcRenderer.invoke("accounts:quitEmulator", id),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setSettings: (patch) => ipcRenderer.invoke("settings:set", patch),
   openPool: () => ipcRenderer.invoke("pool:openWindow"),

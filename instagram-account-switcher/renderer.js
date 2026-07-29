@@ -167,6 +167,12 @@ document.getElementById("emulatorBtn").addEventListener("click", async () => {
   if (!res.ok) alert(res.error);
 });
 
+document.getElementById("emulatorQuitBtn").addEventListener("click", async () => {
+  if (!activeId) return;
+  const res = await window.accountsAPI.quitEmulator(activeId);
+  if (!res.ok) alert(res.error);
+});
+
 document.getElementById("addBtn").addEventListener("click", async () => {
   const res = await window.accountsAPI.add();
   accounts = res.accounts;

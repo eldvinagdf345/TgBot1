@@ -64,33 +64,48 @@ function saveSettings() {
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 }
 
+function runLdconsole(args) {
+  if (!settings.ldConsolePath) {
+    return Promise.resolve({ ok: false, error: "Не задан путь к ldconsole.exe в настройках" });
+  }
+  return new Promise((resolve) => {
+    execFile(settings.ldConsolePath, args, (err) => {
+      if (err) {
+        logCrash(err);
+        resolve({ ok: false, error: `Команда LDPlayer не выполнена: ${err.message}` });
+      } else {
+        resolve({ ok: true });
+      }
+    });
+  });
+}
+
+function accountLdIndexOrError(accountId) {
+  const account = accounts.find((a) => a.id === accountId);
+  if (!account) return { error: "Аккаунт не найден" };
+  if (account.ldIndex === null || account.ldIndex === undefined) {
+    return { error: "Для этого аккаунта не задан номер инстанса LDPlayer" };
+  }
+  return { ldIndex: account.ldIndex };
+}
+
 // Запускает конкретный инстанс LDPlayer (настоящее Android-приложение
 // Instagram) по его индексу — для действий, которых веб-версия принципиально
-// не может сделать (интерактивные стикеры вроде "Ссылки" в истории).
+// не может сделать (интерактивные стикеры вроде "Ссылки" в истории). Логин
+// внутри инстанса делается вручную один раз и остаётся сохранённым, как на
+// обычном телефоне — программа не хранит и не вводит пароли/2FA сама.
 function openInEmulator(accountId) {
-  const account = accounts.find((a) => a.id === accountId);
-  if (!account) return { ok: false, error: "Аккаунт не найден" };
-  if (account.ldIndex === null || account.ldIndex === undefined) {
-    return { ok: false, error: "Для этого аккаунта не задан номер инстанса LDPlayer" };
-  }
-  if (!settings.ldConsolePath) {
-    return { ok: false, error: "Не задан путь к ldconsole.exe в настройках" };
-  }
+  const { ldIndex, error } = accountLdIndexOrError(accountId);
+  if (error) return Promise.resolve({ ok: false, error });
+  return runLdconsole(["launch", "--index", String(ldIndex)]);
+}
 
-  return new Promise((resolve) => {
-    execFile(
-      settings.ldConsolePath,
-      ["launch", "--index", String(account.ldIndex)],
-      (err) => {
-        if (err) {
-          logCrash(err);
-          resolve({ ok: false, error: `Не удалось запустить LDPlayer: ${err.message}` });
-        } else {
-          resolve({ ok: true });
-        }
-      }
-    );
-  });
+// Останавливает инстанс после того, как история выложена — освобождает
+// память компьютера, не держит запущенным то, что сейчас не нужно.
+function quitEmulator(accountId) {
+  const { ldIndex, error } = accountLdIndexOrError(accountId);
+  if (error) return Promise.resolve({ ok: false, error });
+  return runLdconsole(["quit", "--index", String(ldIndex)]);
 }
 
 function loadPool() {
@@ -394,6 +409,7 @@ ipcMain.handle("accounts:setLdIndex", (_e, accountId, ldIndex) => {
 });
 
 ipcMain.handle("accounts:openInEmulator", (_e, accountId) => openInEmulator(accountId));
+ipcMain.handle("accounts:quitEmulator", (_e, accountId) => quitEmulator(accountId));
 
 ipcMain.handle("settings:get", () => settings);
 

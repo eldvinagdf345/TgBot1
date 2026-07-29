@@ -170,6 +170,18 @@ body {
 }
 #emulatorBtn:hover { background: #263042; }
 
+#emulatorQuitBtn {
+  flex-shrink: 0;
+  background: #1F2937;
+  color: #22C55E;
+  border: 1px solid #263042;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#emulatorQuitBtn:hover { background: #263042; }
+
 .ctx-menu {
   position: fixed;
   z-index: 1000;
