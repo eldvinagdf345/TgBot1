@@ -28,6 +28,18 @@
   </div>
   <button id="bulkToggleBtn" class="pool-link-btn">📋 Вставить списком</button>
 
+  <div id="editModal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-title">Изменить ссылку</div>
+      <input id="editUrlInput" type="text" placeholder="ник или ссылка" />
+      <input id="editNumInput" type="number" min="1" placeholder="№ (необяз., пусто — текущий активный)" />
+      <div class="row">
+        <button id="editSaveBtn" class="primary">Сохранить</button>
+        <button id="editCancelBtn">Отмена</button>
+      </div>
+    </div>
+  </div>
+
   <script src="pool-renderer.js"></script>
 </body>
 </html>

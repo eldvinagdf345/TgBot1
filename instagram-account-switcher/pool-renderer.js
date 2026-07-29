@@ -54,18 +54,9 @@ async function render() {
       if (!res.ok) showStatus(res.error);
     });
 
-    row.addEventListener("dblclick", async (e) => {
+    row.addEventListener("dblclick", (e) => {
       e.stopPropagation();
-      const newUrl = prompt("Ник/ссылка:", link.url);
-      if (newUrl === null) return;
-      const newNumRaw = prompt(
-        "Номер аккаунта (оставь пустым — текущий активный):",
-        hasTarget ? String(link.targetNumber) : ""
-      );
-      if (newNumRaw === null) return;
-      const newNum = newNumRaw.trim() === "" ? null : Number(newNumRaw);
-      await window.poolAPI.update(link.id, { url: newUrl.trim(), targetNumber: newNum });
-      render();
+      openEditModal(link);
     });
 
     delBtn.addEventListener("click", async (e) => {
@@ -77,6 +68,36 @@ async function render() {
     list.appendChild(row);
   });
 }
+
+// --- Редактирование ссылки (модалка вместо window.prompt) ---
+
+let editTargetId = null;
+
+function openEditModal(link) {
+  editTargetId = link.id;
+  document.getElementById("editUrlInput").value = link.url;
+  const hasTarget = link.targetNumber !== null && link.targetNumber !== undefined;
+  document.getElementById("editNumInput").value = hasTarget ? link.targetNumber : "";
+  document.getElementById("editModal").hidden = false;
+}
+
+function closeEditModal() {
+  document.getElementById("editModal").hidden = true;
+  editTargetId = null;
+}
+
+document.getElementById("editCancelBtn").addEventListener("click", closeEditModal);
+
+document.getElementById("editSaveBtn").addEventListener("click", async () => {
+  if (!editTargetId) return;
+  const targetId = editTargetId;
+  const url = document.getElementById("editUrlInput").value.trim();
+  const numRaw = document.getElementById("editNumInput").value.trim();
+  closeEditModal();
+  if (!url) return;
+  await window.poolAPI.update(targetId, { url, targetNumber: numRaw === "" ? null : Number(numRaw) });
+  render();
+});
 
 document.getElementById("poolAddBtn").addEventListener("click", async () => {
   const urlInput = document.getElementById("poolUrlInput");

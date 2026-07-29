@@ -50,14 +50,9 @@ function render() {
       renderTopbar();
     });
 
-    item.addEventListener("dblclick", async (e) => {
+    item.addEventListener("dblclick", (e) => {
       e.stopPropagation();
-      const newLabel = prompt("Название аккаунта:", acc.label);
-      if (newLabel && newLabel.trim()) {
-        accounts = await window.accountsAPI.rename(acc.id, newLabel.trim());
-        render();
-        renderTopbar();
-      }
+      openRenameModal(acc.id, acc.label);
     });
 
     item.addEventListener("contextmenu", (e) => {
@@ -102,6 +97,39 @@ document.getElementById("ctxPin").addEventListener("click", async () => {
   closeCtxMenu();
   render();
 });
+
+// --- Переименование аккаунта (модалка вместо window.prompt) ---
+
+let renameTargetId = null;
+
+function openRenameModal(accountId, currentLabel) {
+  renameTargetId = accountId;
+  document.getElementById("renameInput").value = currentLabel;
+  document.getElementById("renameModal").hidden = false;
+  window.accountsAPI.setBrowserViewVisible(false);
+}
+
+function closeRenameModal() {
+  document.getElementById("renameModal").hidden = true;
+  renameTargetId = null;
+  window.accountsAPI.setBrowserViewVisible(true);
+}
+
+document.getElementById("renameSaveBtn").addEventListener("click", async () => {
+  if (!renameTargetId) return;
+  const targetId = renameTargetId;
+  const label = document.getElementById("renameInput").value.trim();
+  closeRenameModal();
+  if (label) {
+    accounts = await window.accountsAPI.rename(targetId, label);
+    render();
+    renderTopbar();
+  }
+});
+
+document.getElementById("renameCancelBtn").addEventListener("click", closeRenameModal);
+
+// --- Номер инстанса LDPlayer (модалка вместо window.prompt) ---
 
 let ldIndexTargetId = null;
 
@@ -148,17 +176,44 @@ document.getElementById("ldIndexCancelBtn").addEventListener("click", () => {
   closeLdIndexModal();
 });
 
-document.getElementById("ctxDelete").addEventListener("click", async () => {
+// --- Общая модалка подтверждения (вместо window.confirm) ---
+
+let confirmCallback = null;
+
+function openConfirmModal(message, onYes) {
+  document.getElementById("confirmMessage").textContent = message;
+  confirmCallback = onYes;
+  document.getElementById("confirmModal").hidden = false;
+  window.accountsAPI.setBrowserViewVisible(false);
+}
+
+function closeConfirmModal() {
+  document.getElementById("confirmModal").hidden = true;
+  confirmCallback = null;
+  window.accountsAPI.setBrowserViewVisible(true);
+}
+
+document.getElementById("confirmYesBtn").addEventListener("click", () => {
+  const cb = confirmCallback;
+  closeConfirmModal();
+  if (cb) cb();
+});
+
+document.getElementById("confirmNoBtn").addEventListener("click", closeConfirmModal);
+
+document.getElementById("ctxDelete").addEventListener("click", () => {
   if (!ctxAccountId) return;
-  const acc = accounts.find((a) => a.id === ctxAccountId);
+  const targetId = ctxAccountId;
+  const acc = accounts.find((a) => a.id === targetId);
   closeCtxMenu();
-  if (acc && confirm(`Удалить "${acc.label}"? Сессия (логин) будет забыта.`)) {
-    const res = await window.accountsAPI.remove(acc.id);
+  if (!acc) return;
+  openConfirmModal(`Удалить "${acc.label}"? Сессия (логин) будет забыта.`, async () => {
+    const res = await window.accountsAPI.remove(targetId);
     accounts = res.accounts;
     activeId = res.activeAccountId;
     render();
     renderTopbar();
-  }
+  });
 });
 
 function renderTopbar() {
@@ -178,6 +233,39 @@ document.getElementById("mobileToggleBtn").addEventListener("click", async () =>
   renderTopbar();
 });
 
+// --- Путь к ldconsole.exe (модалка вместо window.prompt) ---
+
+let pendingEmulatorOpen = null;
+
+function openSettingsModal() {
+  document.getElementById("ldPathInput").value = "C:\\LDPlayer\\LDPlayer9\\ldconsole.exe";
+  document.getElementById("settingsModal").hidden = false;
+  window.accountsAPI.setBrowserViewVisible(false);
+}
+
+function closeSettingsModal() {
+  document.getElementById("settingsModal").hidden = true;
+  window.accountsAPI.setBrowserViewVisible(true);
+}
+
+document.getElementById("settingsCancelBtn").addEventListener("click", () => {
+  pendingEmulatorOpen = null;
+  closeSettingsModal();
+});
+
+document.getElementById("settingsSaveBtn").addEventListener("click", async () => {
+  const path = document.getElementById("ldPathInput").value.trim();
+  if (!path) return;
+  await window.accountsAPI.setSettings({ ldConsolePath: path });
+  closeSettingsModal();
+  if (pendingEmulatorOpen) {
+    const id = pendingEmulatorOpen;
+    pendingEmulatorOpen = null;
+    const res = await window.accountsAPI.openInEmulator(id);
+    if (!res.ok) alert(res.error);
+  }
+});
+
 document.getElementById("emulatorBtn").addEventListener("click", async () => {
   if (!activeId) return;
 
@@ -191,12 +279,9 @@ document.getElementById("emulatorBtn").addEventListener("click", async () => {
 
   const settings = await window.accountsAPI.getSettings();
   if (!settings.ldConsolePath) {
-    const path = prompt(
-      "Укажи путь к ldconsole.exe (обычно C:\\LDPlayer\\LDPlayer9\\ldconsole.exe):",
-      "C:\\LDPlayer\\LDPlayer9\\ldconsole.exe"
-    );
-    if (!path) return;
-    await window.accountsAPI.setSettings({ ldConsolePath: path.trim() });
+    pendingEmulatorOpen = activeId;
+    openSettingsModal();
+    return;
   }
 
   const res = await window.accountsAPI.openInEmulator(activeId);

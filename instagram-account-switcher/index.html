@@ -44,6 +44,38 @@
     </div>
   </div>
 
+  <div id="renameModal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-title">Название аккаунта</div>
+      <input id="renameInput" type="text" placeholder="Название" />
+      <div class="row">
+        <button id="renameSaveBtn" class="primary">Сохранить</button>
+        <button id="renameCancelBtn">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-title" id="confirmMessage"></div>
+      <div class="row">
+        <button id="confirmYesBtn" class="danger">Удалить</button>
+        <button id="confirmNoBtn">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-title">Путь к ldconsole.exe</div>
+      <input id="ldPathInput" type="text" placeholder="C:\LDPlayer\LDPlayer9\ldconsole.exe" />
+      <div class="row">
+        <button id="settingsSaveBtn" class="primary">Сохранить</button>
+        <button id="settingsCancelBtn">Отмена</button>
+      </div>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

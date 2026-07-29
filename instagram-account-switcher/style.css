@@ -403,4 +403,5 @@ body {
   cursor: pointer;
 }
 .modal-box .row button.primary { background: #2563EB; color: #fff; }
-.modal-box .row button:not(.primary) { background: #1F2937; color: #F1F5F9; }
+.modal-box .row button.danger { background: #EF4444; color: #fff; }
+.modal-box .row button:not(.primary):not(.danger) { background: #1F2937; color: #F1F5F9; }
