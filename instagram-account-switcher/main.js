@@ -102,31 +102,52 @@ function positionView(accountId) {
   });
 }
 
-// Мобильный режим = мобильный вьюпорт + мобильный User-Agent, аналог
-// "Toggle device toolbar" в DevTools. Полезно, потому что у Instagram
-// мобильная веб-версия заметно функциональнее в директе, чем десктопная.
-// disableDeviceEmulation() вызываем только если эмуляция реально была
-// включена раньше — на "чистом" view (никогда не включали) это на части
-// Windows-машин роняло процесс на нативном уровне, минуя uncaughtException.
+// Мобильный режим = мобильный вьюпорт + мобильный User-Agent + мобильная
+// screen.orientation, аналог "Toggle device toolbar" в DevTools. Полезно,
+// потому что у Instagram мобильная веб-версия заметно функциональнее в
+// директе, чем десктопная.
+//
+// enableDeviceEmulation() из обычного webContents API подделывает только
+// размер вьюпорта, а не screen.orientation — из-за этого Instagram при
+// попытке выложить историю пишет "поверните устройство" (он проверяет
+// именно системную ориентацию экрана, а не ширину/высоту окна). Поэтому
+// эмуляция сделана через CDP напрямую (Emulation.setDeviceMetricsOverride
+// с явным screenOrientation), это реально подделывает и то, и другое.
+//
+// disableDeviceEmulation-эквивалент вызываем только если эмуляция реально
+// была включена раньше — на "чистом" view (никогда не включали) это на
+// части Windows-машин роняло процесс на нативном уровне, минуя
+// uncaughtException, поэтому симметрия enable/disable сохранена и здесь.
 const emulatedViews = new WeakSet();
 
 function applyMobileMode(view, enabled) {
   try {
     if (!desktopUA) desktopUA = view.webContents.getUserAgent();
+    const dbg = view.webContents.debugger;
+
     if (enabled) {
       view.webContents.setUserAgent(MOBILE_UA);
-      view.webContents.enableDeviceEmulation({
-        screenPosition: "mobile",
-        screenSize: { width: 420, height: 900 },
-        viewPosition: { x: 0, y: 0 },
-        deviceScaleFactor: 2,
-        viewSize: { width: 420, height: 900 },
-        scale: 1,
-      });
+      if (!dbg.isAttached()) dbg.attach("1.3");
+      dbg
+        .sendCommand("Emulation.setDeviceMetricsOverride", {
+          width: 420,
+          height: 900,
+          deviceScaleFactor: 2,
+          mobile: true,
+          screenOrientation: { type: "portraitPrimary", angle: 0 },
+        })
+        .catch(logCrash);
+      dbg
+        .sendCommand("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 })
+        .catch(logCrash);
       emulatedViews.add(view);
     } else if (emulatedViews.has(view)) {
       view.webContents.setUserAgent(desktopUA);
-      view.webContents.disableDeviceEmulation();
+      if (dbg.isAttached()) {
+        dbg.sendCommand("Emulation.clearDeviceMetricsOverride").catch(logCrash);
+        dbg.sendCommand("Emulation.setTouchEmulationEnabled", { enabled: false }).catch(logCrash);
+        dbg.detach();
+      }
       emulatedViews.delete(view);
     }
   } catch (err) {
