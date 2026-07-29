@@ -80,11 +80,15 @@ function openCtxMenu(x, y, acc) {
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
   menu.hidden = false;
+  // BrowserView (сам Instagram) рисуется поверх страницы и перекрывает
+  // меню, если оно вылезает за пределы узкой боковой панели.
+  window.accountsAPI.setBrowserViewVisible(false);
 }
 
 function closeCtxMenu() {
   document.getElementById("ctxMenu").hidden = true;
   ctxAccountId = null;
+  window.accountsAPI.setBrowserViewVisible(true);
 }
 
 document.addEventListener("click", (e) => {

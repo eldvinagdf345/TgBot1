@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("accountsAPI", {
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setSettings: (patch) => ipcRenderer.invoke("settings:set", patch),
   openPool: () => ipcRenderer.invoke("pool:openWindow"),
+  setBrowserViewVisible: (visible) => ipcRenderer.invoke("browserview:setVisible", visible),
   onActiveChanged: (cb) => ipcRenderer.on("accounts:activeChanged", (_e, id) => cb(id)),
   onAccountsUpdated: (cb) => ipcRenderer.on("accounts:updated", (_e, accts) => cb(accts)),
 });

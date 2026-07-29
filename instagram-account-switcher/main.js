@@ -264,6 +264,24 @@ function switchTo(accountId) {
   }
 }
 
+// BrowserView рисуется отдельным нативным слоем поверх всей страницы
+// независимо от CSS/z-index — оверлеи вроде контекстного меню, вылезающие
+// за пределы узкой боковой панели, им перекрывает. Прячем на время оверлея.
+function setBrowserViewVisible(visible) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (visible) {
+    if (activeAccountId) {
+      const view = views.get(activeAccountId);
+      if (view) {
+        mainWindow.setBrowserView(view);
+        positionView(activeAccountId);
+      }
+    }
+  } else {
+    mainWindow.setBrowserView(null);
+  }
+}
+
 function broadcastAccounts() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("accounts:updated", accounts);
@@ -334,6 +352,10 @@ app.whenReady().then(() => {
   loadSettings();
   createWindow();
   if (accounts.length > 0) switchTo(accounts[0].id);
+});
+
+ipcMain.handle("browserview:setVisible", (_e, visible) => {
+  setBrowserViewVisible(visible);
 });
 
 ipcMain.handle("accounts:list", () => accounts);
