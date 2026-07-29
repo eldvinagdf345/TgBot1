@@ -73,6 +73,10 @@ function openCtxMenu(x, y, acc) {
   ctxAccountId = acc.id;
   const menu = document.getElementById("ctxMenu");
   document.getElementById("ctxPin").textContent = acc.pinned ? "📌 Открепить" : "📌 Закрепить";
+  const hasLd = acc.ldIndex !== null && acc.ldIndex !== undefined;
+  document.getElementById("ctxLdIndex").textContent = hasLd
+    ? `📲 Номер инстанса LDPlayer: ${acc.ldIndex}`
+    : "📲 Номер инстанса LDPlayer…";
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
   menu.hidden = false;
@@ -92,6 +96,19 @@ document.getElementById("ctxPin").addEventListener("click", async () => {
   if (!ctxAccountId) return;
   accounts = await window.accountsAPI.togglePin(ctxAccountId);
   closeCtxMenu();
+  render();
+});
+
+document.getElementById("ctxLdIndex").addEventListener("click", async () => {
+  if (!ctxAccountId) return;
+  const acc = accounts.find((a) => a.id === ctxAccountId);
+  closeCtxMenu();
+  const raw = prompt(
+    "Номер инстанса LDPlayer для этого аккаунта (--index в ldconsole.exe), пусто — снять привязку:",
+    acc && acc.ldIndex !== null && acc.ldIndex !== undefined ? String(acc.ldIndex) : ""
+  );
+  if (raw === null) return;
+  accounts = await window.accountsAPI.setLdIndex(ctxAccountId, raw.trim() === "" ? null : raw.trim());
   render();
 });
 
@@ -123,6 +140,31 @@ document.getElementById("mobileToggleBtn").addEventListener("click", async () =>
   if (!activeId) return;
   accounts = await window.accountsAPI.toggleMobile(activeId);
   renderTopbar();
+});
+
+document.getElementById("emulatorBtn").addEventListener("click", async () => {
+  if (!activeId) return;
+
+  const acc = accounts.find((a) => a.id === activeId);
+  if (!acc || acc.ldIndex === null || acc.ldIndex === undefined) {
+    alert(
+      'У этого аккаунта не задан номер инстанса LDPlayer.\nПравый клик по слоту → "📲 Номер инстанса LDPlayer…"'
+    );
+    return;
+  }
+
+  const settings = await window.accountsAPI.getSettings();
+  if (!settings.ldConsolePath) {
+    const path = prompt(
+      "Укажи путь к ldconsole.exe (обычно C:\\LDPlayer\\LDPlayer9\\ldconsole.exe):",
+      "C:\\LDPlayer\\LDPlayer9\\ldconsole.exe"
+    );
+    if (!path) return;
+    await window.accountsAPI.setSettings({ ldConsolePath: path.trim() });
+  }
+
+  const res = await window.accountsAPI.openInEmulator(activeId);
+  if (!res.ok) alert(res.error);
 });
 
 document.getElementById("addBtn").addEventListener("click", async () => {

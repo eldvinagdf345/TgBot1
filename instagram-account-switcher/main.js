@@ -1,11 +1,13 @@
 const { app, BrowserWindow, BrowserView, ipcMain, session, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { execFile } = require("child_process");
 
 const SIDEBAR_WIDTH = 84;
 const TOPBAR_HEIGHT = 40;
 const ACCOUNTS_FILE = path.join(app.getPath("userData"), "accounts.json");
 const POOL_FILE = path.join(app.getPath("userData"), "pool.json");
+const SETTINGS_FILE = path.join(app.getPath("userData"), "settings.json");
 const MOBILE_UA =
   "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
 
@@ -13,6 +15,7 @@ let mainWindow;
 let poolWindow = null;
 let accounts = [];
 let poolLinks = [];
+let settings = { ldConsolePath: "" };
 const views = new Map();
 let activeAccountId = null;
 let desktopUA = null;
@@ -41,11 +44,53 @@ function loadAccounts() {
     if (a.pinned === undefined) a.pinned = false;
     if (a.mobileMode === undefined) a.mobileMode = false;
     if (a.visitCount === undefined) a.visitCount = 0;
+    if (a.ldIndex === undefined) a.ldIndex = null;
   });
 }
 
 function saveAccounts() {
   fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+}
+
+function loadSettings() {
+  try {
+    settings = { ...settings, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8")) };
+  } catch {
+    // используем дефолт
+  }
+}
+
+function saveSettings() {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+
+// Запускает конкретный инстанс LDPlayer (настоящее Android-приложение
+// Instagram) по его индексу — для действий, которых веб-версия принципиально
+// не может сделать (интерактивные стикеры вроде "Ссылки" в истории).
+function openInEmulator(accountId) {
+  const account = accounts.find((a) => a.id === accountId);
+  if (!account) return { ok: false, error: "Аккаунт не найден" };
+  if (account.ldIndex === null || account.ldIndex === undefined) {
+    return { ok: false, error: "Для этого аккаунта не задан номер инстанса LDPlayer" };
+  }
+  if (!settings.ldConsolePath) {
+    return { ok: false, error: "Не задан путь к ldconsole.exe в настройках" };
+  }
+
+  return new Promise((resolve) => {
+    execFile(
+      settings.ldConsolePath,
+      ["launch", "--index", String(account.ldIndex)],
+      (err) => {
+        if (err) {
+          logCrash(err);
+          resolve({ ok: false, error: `Не удалось запустить LDPlayer: ${err.message}` });
+        } else {
+          resolve({ ok: true });
+        }
+      }
+    );
+  });
 }
 
 function loadPool() {
@@ -271,6 +316,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   loadAccounts();
   loadPool();
+  loadSettings();
   createWindow();
   if (accounts.length > 0) switchTo(accounts[0].id);
 });
@@ -336,6 +382,25 @@ ipcMain.handle("accounts:toggleMobile", (_e, accountId) => {
     view.webContents.reload();
   }
   return accounts;
+});
+
+ipcMain.handle("accounts:setLdIndex", (_e, accountId, ldIndex) => {
+  const account = accounts.find((a) => a.id === accountId);
+  if (account) {
+    account.ldIndex = ldIndex === null || ldIndex === "" ? null : Number(ldIndex);
+    saveAccounts();
+  }
+  return accounts;
+});
+
+ipcMain.handle("accounts:openInEmulator", (_e, accountId) => openInEmulator(accountId));
+
+ipcMain.handle("settings:get", () => settings);
+
+ipcMain.handle("settings:set", (_e, patch) => {
+  settings = { ...settings, ...patch };
+  saveSettings();
+  return settings;
 });
 
 ipcMain.handle("accounts:remove", async (_e, accountId) => {
