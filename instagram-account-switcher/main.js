@@ -90,16 +90,31 @@ function createWindow() {
   });
 }
 
+const MOBILE_VIEW_WIDTH = 420;
+
 function positionView(accountId) {
   const view = views.get(accountId);
   if (!view) return;
+  const account = accounts.find((a) => a.id === accountId);
   const [w, h] = mainWindow.getContentSize();
-  view.setBounds({
-    x: SIDEBAR_WIDTH,
-    y: TOPBAR_HEIGHT,
-    width: Math.max(w - SIDEBAR_WIDTH, 0),
-    height: Math.max(h - TOPBAR_HEIGHT, 0),
-  });
+  const availWidth = Math.max(w - SIDEBAR_WIDTH, 0);
+  const availHeight = Math.max(h - TOPBAR_HEIGHT, 0);
+
+  if (account && account.mobileMode) {
+    // Реально сужаем окно рендеринга, а не только подделываем цифры через
+    // CDP — иначе настоящие пиксели окна (широкие, десктопные) не сходятся
+    // с заявленной портретной ориентацией, и Instagram иногда всё равно
+    // просит повернуть устройство.
+    const mobileWidth = Math.min(MOBILE_VIEW_WIDTH, availWidth);
+    view.setBounds({
+      x: SIDEBAR_WIDTH + Math.floor((availWidth - mobileWidth) / 2),
+      y: TOPBAR_HEIGHT,
+      width: mobileWidth,
+      height: availHeight,
+    });
+  } else {
+    view.setBounds({ x: SIDEBAR_WIDTH, y: TOPBAR_HEIGHT, width: availWidth, height: availHeight });
+  }
 }
 
 // Мобильный режим = мобильный вьюпорт + мобильный User-Agent + мобильная
@@ -130,7 +145,7 @@ function applyMobileMode(view, enabled) {
       if (!dbg.isAttached()) dbg.attach("1.3");
       dbg
         .sendCommand("Emulation.setDeviceMetricsOverride", {
-          width: 420,
+          width: MOBILE_VIEW_WIDTH,
           height: 900,
           deviceScaleFactor: 2,
           mobile: true,
@@ -317,6 +332,7 @@ ipcMain.handle("accounts:toggleMobile", (_e, accountId) => {
   const view = views.get(accountId);
   if (view) {
     applyMobileMode(view, account.mobileMode);
+    positionView(accountId);
     view.webContents.reload();
   }
   return accounts;
