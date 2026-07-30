@@ -15,12 +15,11 @@ except ImportError:
 _PROMPTS = {
     "API_ID": "API_ID (число с https://my.telegram.org -> API development tools): ",
     "API_HASH": "API_HASH (с той же страницы my.telegram.org): ",
-    "SOURCE_CHAT": "SOURCE_CHAT - @username форума, или его числовой id "
-                   "(id можно узнать через --list-chats): ",
 }
 
 
-def _save_to_env_file(name, value):
+def save_to_env(name, value):
+    """Writes/updates a single KEY=value line in .env (no prompting)."""
     lines = []
     if os.path.exists(ENV_PATH):
         with open(ENV_PATH, "r", encoding="utf-8") as f:
@@ -35,6 +34,7 @@ def _save_to_env_file(name, value):
 
     with open(ENV_PATH, "w", encoding="utf-8") as f:
         f.writelines(lines)
+    os.environ[name] = str(value)
 
 
 def prompt_and_save(name, cast=str):
@@ -51,8 +51,7 @@ def prompt_and_save(name, cast=str):
         except ValueError:
             print("  Не похоже на число, попробуйте ещё раз.")
             continue
-        os.environ[name] = raw
-        _save_to_env_file(name, raw)
+        save_to_env(name, raw)
         print("  (сохранено в .env, в следующий раз спрашивать не буду)\n")
         return raw
 
@@ -70,9 +69,10 @@ API_ID = int(_get("API_ID", interactive=True, cast=int))
 API_HASH = _get("API_HASH", interactive=True)
 SESSION_NAME = _get("SESSION_NAME", "clone_session")
 
-# SOURCE_CHAT нарочно не спрашивается здесь: для --list-chats он ещё не
-# нужен (это как раз способ его узнать). clone.py спрашивает его сам,
-# только когда он действительно требуется для запуска клонирования.
+# SOURCE_CHAT нарочно не спрашивается здесь и не через консольный prompt:
+# clone.py сам предложит выбрать группу из пронумерованного списка ваших
+# чатов при первом запуске и запомнит выбор в .env. TARGET_CHAT/TARGET_TITLE
+# по умолчанию тоже пустые - клон создаётся новой группой автоматически.
 SOURCE_CHAT = _get("SOURCE_CHAT", "") or None
 TARGET_CHAT = _get("TARGET_CHAT", "") or None
 TARGET_TITLE = _get("TARGET_TITLE", "") or None

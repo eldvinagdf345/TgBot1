@@ -42,17 +42,18 @@ async def retry_flood(coro_func, *args, **kwargs):
 
 async def is_forum(client, channel):
     full = await client(GetFullChannelRequest(channel))
-    return bool(full.full_chat.forum), full
+    # `forum` is a flag on the Channel entity itself, not on ChannelFull.
+    return bool(getattr(channel, "forum", False)), full
 
 
-async def get_or_create_target(client, source, cfg, state):
+async def get_or_create_target(client, source, cfg, state, title=None):
     if state.target_chat_id:
         try:
             return await client.get_entity(state.target_chat_id)
         except Exception:
             print("  ! сохранённая целевая группа недоступна, ищу/создаю заново")
 
-    title = cfg.TARGET_TITLE or source.title
+    title = title or cfg.TARGET_TITLE or source.title
 
     if cfg.TARGET_CHAT:
         target = await client.get_entity(resolve_chat_ref(cfg.TARGET_CHAT))

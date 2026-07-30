@@ -31,6 +31,29 @@ async def list_chats(client):
         print(f"  {d.id:>15}  {username:<25}  {d.title}")
 
 
+async def pick_source_chat(client):
+    """Lets the user pick the source forum by number instead of typing an id."""
+    print("\nЗагружаю список ваших групп...")
+    dialogs = [d async for d in client.iter_dialogs() if d.is_group or d.is_channel]
+    if not dialogs:
+        raise SystemExit("Не нашёл ни одной группы/канала на этом аккаунте.")
+
+    print("\nВыберите группу-источник (форум, который нужно клонировать):\n")
+    for i, d in enumerate(dialogs, 1):
+        kind = "форум" if getattr(d.entity, "forum", False) else "группа"
+        username = f" @{d.entity.username}" if getattr(d.entity, "username", None) else ""
+        print(f"  {i}. {d.title}  [{kind}]{username}")
+
+    while True:
+        raw = input("\nНомер группы-источника: ").strip()
+        if raw.isdigit() and 1 <= int(raw) <= len(dialogs):
+            chosen = dialogs[int(raw) - 1].entity
+            cfg.save_to_env("SOURCE_CHAT", chosen.id)
+            print(f"  (запомнил «{dialogs[int(raw) - 1].title}» как источник, в следующий раз спрашивать не буду)\n")
+            return chosen
+        print("  Некорректный номер, попробуйте ещё раз.")
+
+
 def _is_nav_topic(t):
     return t.title.strip().casefold() == cfg.NAV_TOPIC_TITLE.strip().casefold()
 
@@ -49,10 +72,12 @@ async def run(args):
         state.reset()
         print("Прогресс сброшен, клон будет пересобран заново.")
 
-    source_chat = cfg.SOURCE_CHAT or cfg.prompt_and_save("SOURCE_CHAT")
+    if cfg.SOURCE_CHAT:
+        source = await client.get_entity(resolve_chat_ref(cfg.SOURCE_CHAT))
+    else:
+        source = await pick_source_chat(client)
 
-    print(f"Читаю исходный форум: {source_chat}")
-    source = await client.get_entity(resolve_chat_ref(source_chat))
+    print(f"Источник: {source.title}")
     forum, _ = await is_forum(client, source)
     if not forum:
         raise SystemExit(
@@ -60,7 +85,12 @@ async def run(args):
             "Включите темы в настройках группы и попробуйте снова."
         )
 
-    target = await get_or_create_target(client, source, cfg, state)
+    target_title = cfg.TARGET_TITLE
+    if not target_title and not cfg.TARGET_CHAT and not state.target_chat_id:
+        raw = input(f"Название новой группы-клона [{source.title}]: ").strip()
+        target_title = raw or source.title
+
+    target = await get_or_create_target(client, source, cfg, state, title=target_title)
     await copy_about(client, source, target)
     await copy_profile_photo(client, source, target, cfg.DOWNLOAD_DIR)
 
