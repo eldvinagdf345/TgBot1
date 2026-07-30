@@ -59,7 +59,17 @@ def _is_nav_topic(t):
 
 
 async def run(args):
-    client = TelegramClient(cfg.SESSION_NAME, cfg.API_ID, cfg.API_HASH)
+    if args.switch_account:
+        cfg.clear_env_keys("API_ID", "API_HASH", "SOURCE_CHAT")
+        for suffix in (".session", ".session-journal"):
+            path = cfg.SESSION_NAME + suffix
+            if os.path.exists(path):
+                os.remove(path)
+        print("Данные предыдущего аккаунта сброшены - сейчас спрошу новые API_ID/API_HASH и номер телефона.\n")
+
+    api_id = cfg.get_api_id()
+    api_hash = cfg.get_api_hash()
+    client = TelegramClient(cfg.SESSION_NAME, api_id, api_hash)
     await client.start()
 
     if args.list_chats:
@@ -68,7 +78,9 @@ async def run(args):
         return
 
     state = State(cfg.STATE_FILE)
-    if args.reset:
+    if args.reset or args.switch_account:
+        # A group/topics created under the old account likely isn't owned by
+        # the new one either, so there's nothing to safely resume from.
         state.reset()
         print("Прогресс сброшен, клон будет пересобран заново.")
 
@@ -163,6 +175,8 @@ def main():
     parser.add_argument("--reset", action="store_true", help="забыть прогресс и пересобрать клон с нуля")
     parser.add_argument("--topics-only", action="store_true", help="только создать темы, без копирования сообщений")
     parser.add_argument("--list-chats", action="store_true", help="вывести id/username ваших чатов и выйти")
+    parser.add_argument("--switch-account", action="store_true",
+                         help="забыть API_ID/API_HASH/сессию/источник и залогиниться заново под другим аккаунтом")
     args = parser.parse_args()
     asyncio.run(run(args))
 

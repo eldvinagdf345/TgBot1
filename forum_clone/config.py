@@ -56,6 +56,19 @@ def prompt_and_save(name, cast=str):
         return raw
 
 
+def clear_env_keys(*names):
+    """Removes the given keys from .env and from the live process env -
+    used by --switch-account so credentials get asked again from scratch."""
+    if os.path.exists(ENV_PATH):
+        with open(ENV_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        lines = [l for l in lines if not any(l.strip().startswith(f"{n}=") for n in names)]
+        with open(ENV_PATH, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    for n in names:
+        os.environ.pop(n, None)
+
+
 def _get(name, default=None, interactive=False, cast=str):
     value = os.environ.get(name) or default
     if value:
@@ -65,8 +78,16 @@ def _get(name, default=None, interactive=False, cast=str):
     return default
 
 
-API_ID = int(_get("API_ID", interactive=True, cast=int))
-API_HASH = _get("API_HASH", interactive=True)
+def get_api_id():
+    """Asked lazily (not at import time) so --switch-account can clear the
+    old value first, before anything prompts for it."""
+    return int(_get("API_ID", interactive=True, cast=int))
+
+
+def get_api_hash():
+    return _get("API_HASH", interactive=True)
+
+
 SESSION_NAME = _get("SESSION_NAME", "clone_session")
 
 # SOURCE_CHAT нарочно не спрашивается здесь и не через консольный prompt:
