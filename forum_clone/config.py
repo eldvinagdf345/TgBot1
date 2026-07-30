@@ -2,7 +2,10 @@ import os
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    # Всегда ищем .env рядом с этим файлом, а не рядом с текущей рабочей
+    # директорией - иначе поиск ломается, если запускать `python -m
+    # forum_clone.clone` из папки на уровень выше (что и требуется для -m).
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 except ImportError:
     pass
 
