@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import os
 import sys
 import threading
@@ -81,6 +82,8 @@ class App(ctk.CTk):
         self.busy = False
         self.dialog_cache = []
         self.selected_source = None
+        self.current_future = None
+        self.applied_delay = cfg.DELAY_SECONDS
 
         self._build_ui()
         self._start_loop_thread()
@@ -119,9 +122,15 @@ class App(ctk.CTk):
         self.title_entry.grid(row=0, column=1, sticky="ew", padx=8, pady=8)
 
         ctk.CTkLabel(opts, text="Задержка между сообщениями, сек:").grid(row=1, column=0, sticky="w", padx=8, pady=8)
-        self.delay_entry = ctk.CTkEntry(opts, width=100)
-        self.delay_entry.insert(0, str(cfg.DELAY_SECONDS))
-        self.delay_entry.grid(row=1, column=1, sticky="w", padx=8, pady=8)
+        delay_row = ctk.CTkFrame(opts, fg_color="transparent")
+        delay_row.grid(row=1, column=1, sticky="w", padx=8, pady=8)
+        self.delay_var = ctk.StringVar(value=str(cfg.DELAY_SECONDS))
+        self.delay_entry = ctk.CTkEntry(delay_row, width=100, textvariable=self.delay_var)
+        self.delay_entry.pack(side="left")
+        self.delay_var.trace_add("write", self._on_delay_changed)
+        self.confirm_delay_btn = ctk.CTkButton(delay_row, text="Подтвердить", width=110, state="disabled",
+                                                command=self.on_confirm_delay)
+        self.confirm_delay_btn.pack(side="left", padx=(8, 0))
 
         actions = ctk.CTkFrame(self)
         actions.pack(fill="x", padx=16, pady=8)
@@ -131,6 +140,10 @@ class App(ctk.CTk):
         self.start_btn = ctk.CTkButton(actions, text="Начать перенос",
                                         command=lambda: self.on_start(topics_only=False))
         self.start_btn.pack(side="left", padx=8, pady=8)
+        self.stop_btn = ctk.CTkButton(actions, text="Остановить", state="disabled",
+                                       fg_color="#B91C1C", hover_color="#7F1D1D",
+                                       command=self.on_stop)
+        self.stop_btn.pack(side="left", padx=8, pady=8)
         ctk.CTkButton(actions, text="Сбросить прогресс", fg_color="gray40", hover_color="gray30",
                       command=self.on_reset).pack(side="left", padx=8, pady=8)
 
@@ -153,6 +166,34 @@ class App(ctk.CTk):
         self.start_btn.configure(state=state)
         self.refresh_btn.configure(state=state)
         self.switch_account_btn.configure(state=state)
+        self.stop_btn.configure(state="normal" if busy else "disabled")
+
+    def _on_delay_changed(self, *_args):
+        raw = self.delay_var.get().strip().replace(",", ".")
+        try:
+            changed = abs(float(raw) - self.applied_delay) > 1e-9
+        except ValueError:
+            changed = bool(raw)
+        self.confirm_delay_btn.configure(state="normal" if changed else "disabled")
+
+    def on_confirm_delay(self):
+        raw = self.delay_var.get().strip().replace(",", ".")
+        try:
+            value = float(raw)
+            if value < 0:
+                raise ValueError
+        except ValueError:
+            self.log("\nЗадержка должна быть числом ≥ 0, например 0.5\n")
+            return
+        self.applied_delay = value
+        cfg.save_to_env("DELAY_SECONDS", str(value))
+        self.confirm_delay_btn.configure(state="disabled")
+        self.log(f"\nЗадержка между сообщениями изменена на {value} сек.\n")
+
+    def on_stop(self):
+        if self.current_future and not self.current_future.done():
+            self.current_future.cancel()
+            self.log("\n⏹ Останавливаю текущую операцию...\n")
 
     # ---------- cross-thread prompt ----------
 
@@ -182,21 +223,28 @@ class App(ctk.CTk):
             self.loop.run_forever()
         threading.Thread(target=runner, daemon=True).start()
 
-    def run_async(self, coro, on_done=None):
+    def run_async(self, coro, on_done=None, on_cancel=None):
         self._loop_ready.wait()
         old_stdout = sys.stdout
         sys.stdout = _StreamToLog(self)
 
         def _on_complete(fut):
             sys.stdout = old_stdout
+            self.current_future = None
             try:
                 fut.result()
+            except (asyncio.CancelledError, concurrent.futures.CancelledError):
+                if on_cancel:
+                    on_cancel()
+                else:
+                    self.log("\n⏹ Остановлено.\n")
             except Exception as e:
                 self.log(f"\n❌ Ошибка: {e}\n")
             if on_done:
                 self.after(0, on_done)
 
         future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        self.current_future = future
         future.add_done_callback(_on_complete)
 
     # ---------- Telegram login ----------
@@ -321,18 +369,10 @@ class App(ctk.CTk):
             return
 
         title = self.title_entry.get().strip() or self.selected_source.title
-        try:
-            delay = float(self.delay_entry.get().strip().replace(",", "."))
-            if delay < 0:
-                raise ValueError
-        except ValueError:
-            delay = 0.5
-            self.delay_entry.delete(0, "end")
-            self.delay_entry.insert(0, "0.5")
-        cfg.save_to_env("DELAY_SECONDS", str(delay))
 
         self.set_busy(True)
-        self.log(f"\n=== {'Тестовый прогон (только темы)' if topics_only else 'Полный перенос'} ===\n")
+        self.log(f"\n=== {'Тестовый прогон (только темы)' if topics_only else 'Полный перенос'} "
+                  f"(задержка {self.applied_delay} сек) ===\n")
 
         async def task():
             client = await self._connect()
@@ -340,9 +380,15 @@ class App(ctk.CTk):
             if not forum:
                 raise RuntimeError("Источник не является форумом (нет включённых тем).")
             state = State(cfg.STATE_FILE)
-            await run_pipeline(client, cfg, state, self.selected_source, title, delay, topics_only=topics_only)
+            await run_pipeline(client, cfg, state, self.selected_source, title,
+                                self.applied_delay, topics_only=topics_only)
 
-        self.run_async(task(), on_done=lambda: self.set_busy(False))
+        def on_cancel():
+            state = State(cfg.STATE_FILE)
+            state.reset()
+            self.log("\n⏹ Остановлено. Прогресс сброшен — следующий запуск начнётся с нуля.\n")
+
+        self.run_async(task(), on_done=lambda: self.set_busy(False), on_cancel=on_cancel)
 
     def on_reset(self):
         if self.busy:
