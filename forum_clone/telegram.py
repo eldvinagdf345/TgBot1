@@ -1,20 +1,22 @@
 import asyncio
 import os
 
-from telethon import types
+from telethon import helpers, types
 from telethon.errors import FloodWaitError
 from telethon.tl.functions.channels import (
     CreateChannelRequest,
-    CreateForumTopicRequest,
-    EditForumTopicRequest,
     EditPhotoRequest,
     EditTitleRequest,
-    GetForumTopicsRequest,
     GetFullChannelRequest,
     ToggleForumRequest,
+)
+from telethon.tl.functions.messages import (
+    CreateForumTopicRequest,
+    EditChatAboutRequest,
+    EditForumTopicRequest,
+    GetForumTopicsRequest,
     UpdatePinnedForumTopicRequest,
 )
-from telethon.tl.functions.messages import EditChatAboutRequest
 
 
 async def retry_flood(coro_func, *args, **kwargs):
@@ -46,7 +48,7 @@ async def get_or_create_target(client, source, cfg, state):
         target = await client.get_entity(cfg.TARGET_CHAT)
         forum, _ = await is_forum(client, target)
         if not forum:
-            await retry_flood(client, ToggleForumRequest(channel=target, enabled=True))
+            await retry_flood(client, ToggleForumRequest(channel=target, enabled=True, tabs=False))
         if getattr(target, "title", None) != title:
             await retry_flood(client, EditTitleRequest(channel=target, title=title))
         state.target_chat_id = target.id
@@ -66,7 +68,7 @@ async def get_or_create_target(client, source, cfg, state):
     target = result.chats[0]
     forum, _ = await is_forum(client, target)
     if not forum:
-        await retry_flood(client, ToggleForumRequest(channel=target, enabled=True))
+        await retry_flood(client, ToggleForumRequest(channel=target, enabled=True, tabs=False))
 
     state.target_chat_id = target.id
     print(f"Создана новая группа-форум «{title}» (id {target.id})")
@@ -112,7 +114,7 @@ async def fetch_all_topics(client, source):
     offset_date, offset_id, offset_topic = 0, 0, 0
     while True:
         request = GetForumTopicsRequest(
-            channel=source, offset_date=offset_date, offset_id=offset_id,
+            peer=source, offset_date=offset_date, offset_id=offset_id,
             offset_topic=offset_topic, limit=100,
         )
         res = await retry_flood(client, request)
@@ -142,7 +144,7 @@ async def ensure_topic(client, target, t, state):
         # Topic id 1 is Telegram's built-in "General" topic - it already
         # exists in every forum, we just rename it to match the source.
         try:
-            await retry_flood(client, EditForumTopicRequest(channel=target, topic_id=1, title=t.title))
+            await retry_flood(client, EditForumTopicRequest(peer=target, topic_id=1, title=t.title))
         except Exception:
             pass
         state.set_topic_mapping(t.id, 1)
@@ -150,9 +152,10 @@ async def ensure_topic(client, target, t, state):
         return 1
 
     request = CreateForumTopicRequest(
-        channel=target, title=t.title,
+        peer=target, title=t.title,
         icon_color=getattr(t, "icon_color", None),
         icon_emoji_id=getattr(t, "icon_emoji_id", None) or None,
+        random_id=helpers.generate_random_long(),
     )
     result = await retry_flood(client, request)
     new_id = None
@@ -175,7 +178,7 @@ async def finalize_topic(client, target, source_topic, target_topic_id):
     if getattr(source_topic, "closed", False):
         try:
             await retry_flood(client, EditForumTopicRequest(
-                channel=target, topic_id=target_topic_id, closed=True,
+                peer=target, topic_id=target_topic_id, closed=True,
             ))
         except Exception as e:
             print(f"  ! не удалось закрыть тему «{source_topic.title}»: {e}")
@@ -183,7 +186,7 @@ async def finalize_topic(client, target, source_topic, target_topic_id):
     if getattr(source_topic, "pinned", False):
         try:
             await retry_flood(client, UpdatePinnedForumTopicRequest(
-                channel=target, topic_id=target_topic_id, pinned=True,
+                peer=target, topic_id=target_topic_id, pinned=True,
             ))
         except Exception as e:
             print(f"  ! не удалось закрепить тему «{source_topic.title}» в списке: {e}")
