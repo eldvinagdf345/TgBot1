@@ -7,9 +7,9 @@ from .telegram import retry_flood
 
 
 def _topic_reply(topic_id):
-    # Explicit InputReplyToMessage so the message lands in the right forum
-    # topic regardless of how a given Telethon version auto-converts a bare int.
-    return types.InputReplyToMessage(reply_to_msg_id=topic_id, top_msg_id=topic_id)
+    # Telethon's send_message/send_file only accept int/Message for reply_to;
+    # when the target is a forum it treats that int as the topic id.
+    return topic_id
 
 
 def _sanitize_attributes(attrs):
@@ -158,8 +158,9 @@ async def _send_single(client, target, topic_id, msg, download_dir, link_rewrite
             )
         except Exception as e:
             print(f"    ! опрос #{msg.id} не пересоздан ({e}), копирую как текст")
+            question = getattr(media.poll.question, "text", media.poll.question)
             sent = await retry_flood(
-                client.send_message, target, f"[Опрос] {media.poll.question}",
+                client.send_message, target, f"[Опрос] {question}",
                 reply_to=_topic_reply(topic_id),
             )
         await _pin_if_needed(client, target, msg, sent)
