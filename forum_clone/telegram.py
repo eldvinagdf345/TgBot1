@@ -22,10 +22,11 @@ from telethon.tl.functions.messages import (
 )
 
 # Minimal admin profile used for both the primary account and worker
-# accounts: just enough to bypass the locked-down member permissions below
-# and post anonymously (as "the group"), nothing else (no ban/invite/pin/
+# accounts: just enough to bypass the locked-down member permissions below,
+# post anonymously (as "the group"), and pin messages (needed to mirror
+# pinned-message status from the source) - nothing else (no ban/invite/
 # change-info/add-admins rights).
-_ANONYMOUS_POSTER_RIGHTS = types.ChatAdminRights(anonymous=True, other=True)
+_ANONYMOUS_POSTER_RIGHTS = types.ChatAdminRights(anonymous=True, other=True, pin_messages=True)
 
 
 def resolve_chat_ref(value):
