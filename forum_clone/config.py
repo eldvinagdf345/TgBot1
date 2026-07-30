@@ -101,7 +101,7 @@ TARGET_TITLE = _get("TARGET_TITLE", "") or None
 DOWNLOAD_DIR = _get("DOWNLOAD_DIR", "./downloads")
 STATE_FILE = _get("STATE_FILE", "./state.json")
 
-DELAY_SECONDS = float(_get("DELAY_SECONDS", "1.5"))
+DELAY_SECONDS = float(_get("DELAY_SECONDS", "0.5"))
 
 # Название темы-навигации: создаётся и заполняется последней, ссылки на темы
 # источника внутри неё переписываются на ссылки клона. Сравнение по названию,
