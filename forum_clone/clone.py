@@ -20,6 +20,7 @@ from forum_clone.telegram import (
 )
 from forum_clone.links import build_link_rewriter
 from forum_clone.messages import clone_topic_messages
+from forum_clone.forward import forward_topic_messages
 
 
 async def list_chats(client):
@@ -86,12 +87,12 @@ async def run(args):
         for t in regular_topics:
             target_topic_id = mapping[t.id]
             print(f"Тема «{t.title}» (источник #{t.id} -> клон #{target_topic_id})")
-            n = await clone_topic_messages(
+            n = await forward_topic_messages(
                 client, source, target, t.id, target_topic_id,
-                state, cfg.DOWNLOAD_DIR, cfg.DELAY_SECONDS,
+                state, cfg.DELAY_SECONDS,
             )
             total += n
-            print(f"  = {n} новых сообщений скопировано")
+            print(f"  = {n} новых сообщений переслано")
             await finalize_topic(client, target, t, target_topic_id)
 
     if nav_topic:
