@@ -10,6 +10,7 @@ import customtkinter as ctk
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 
+from forum_clone import accounts as accounts_store
 from forum_clone import config as cfg
 from forum_clone.state import State
 from forum_clone.telegram import is_forum
@@ -84,8 +85,10 @@ class App(ctk.CTk):
         self.selected_source = None
         self.current_future = None
         self.applied_delay = cfg.DELAY_SECONDS
+        self.worker_rows = []
 
         self._build_ui()
+        self._refresh_workers_panel()
         self._start_loop_thread()
         self.after(300, self.on_refresh_dialogs)
 
@@ -112,6 +115,21 @@ class App(ctk.CTk):
                                               values=["(нажмите «Обновить список групп»)"],
                                               command=self.on_source_selected)
         self.source_menu.pack(fill="x", padx=8, pady=8)
+
+        workers = ctk.CTkFrame(self)
+        workers.pack(fill="x", padx=16, pady=8)
+        wtop = ctk.CTkFrame(workers, fg_color="transparent")
+        wtop.pack(fill="x")
+        ctk.CTkLabel(wtop, text="Аккаунты-помощники (делят темы между собой для ускорения):",
+                     anchor="w").pack(side="left", padx=8, pady=(8, 0))
+        self.add_worker_btn = ctk.CTkButton(wtop, text="+ Добавить аккаунт", width=170,
+                                             command=self.on_add_worker)
+        self.add_worker_btn.pack(side="right", padx=8, pady=(4, 0))
+        self.workers_list = ctk.CTkFrame(workers, fg_color="transparent")
+        self.workers_list.pack(fill="x", padx=8, pady=(4, 8))
+        self.no_workers_label = ctk.CTkLabel(self.workers_list, text="(нет — пересылает только основной аккаунт)",
+                                              text_color="gray60")
+        self.no_workers_label.pack(anchor="w")
 
         opts = ctk.CTkFrame(self)
         opts.pack(fill="x", padx=16, pady=8)
@@ -166,7 +184,32 @@ class App(ctk.CTk):
         self.start_btn.configure(state=state)
         self.refresh_btn.configure(state=state)
         self.switch_account_btn.configure(state=state)
+        self.add_worker_btn.configure(state=state)
+        for _, remove_btn in self.worker_rows:
+            remove_btn.configure(state=state)
         self.stop_btn.configure(state="normal" if busy else "disabled")
+
+    def _refresh_workers_panel(self):
+        for w in self.workers_list.winfo_children():
+            w.destroy()
+        self.worker_rows = []
+
+        accounts = accounts_store.load_accounts()
+        if not accounts:
+            self.no_workers_label = ctk.CTkLabel(self.workers_list,
+                                                  text="(нет — пересылает только основной аккаунт)",
+                                                  text_color="gray60")
+            self.no_workers_label.pack(anchor="w")
+            return
+
+        for acc in accounts:
+            row = ctk.CTkFrame(self.workers_list, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(row, text=f"• {acc['label']}", anchor="w").pack(side="left")
+            remove_btn = ctk.CTkButton(row, text="Удалить", width=90, fg_color="gray40", hover_color="gray30",
+                                        command=lambda sn=acc["session_name"]: self.on_remove_worker(sn))
+            remove_btn.pack(side="right")
+            self.worker_rows.append((acc["session_name"], remove_btn))
 
     def _on_delay_changed(self, *_args):
         raw = self.delay_var.get().strip().replace(",", ".")
@@ -361,6 +404,38 @@ class App(ctk.CTk):
         self.log("\nДанные аккаунта сброшены. Нажимаю «Обновить список групп»...\n")
         self.on_refresh_dialogs()
 
+    def on_add_worker(self):
+        if self.busy:
+            return
+        self.set_busy(True)
+        self.log("\nДобавляю аккаунт-помощник...\n")
+
+        async def task():
+            api_id, api_hash = await self.ensure_credentials()
+            session_name = accounts_store.next_session_name()
+            client = TelegramClient(session_name, api_id, api_hash)
+            await self.ensure_login(client)
+            me = await client.get_me()
+            label = f"{me.first_name or ''} ({me.phone or me.id})".strip()
+            await client.disconnect()
+            accounts_store.add_account(session_name, label)
+            self.log(f"Аккаунт «{label}» добавлен. Если он ещё не состоит в группе-источнике - "
+                      f"добавьте его туда сами, иначе он будет пропущен при переносе.\n")
+            self.after(0, self._refresh_workers_panel)
+
+        self.run_async(task(), on_done=lambda: self.set_busy(False))
+
+    def on_remove_worker(self, session_name):
+        if self.busy:
+            return
+        accounts_store.remove_account(session_name)
+        for suffix in (".session", ".session-journal"):
+            path = session_name + suffix
+            if os.path.exists(path):
+                os.remove(path)
+        self._refresh_workers_panel()
+        self.log("\nАккаунт-помощник удалён.\n")
+
     def on_start(self, topics_only):
         if self.busy:
             return
@@ -380,8 +455,25 @@ class App(ctk.CTk):
             if not forum:
                 raise RuntimeError("Источник не является форумом (нет включённых тем).")
             state = State(cfg.STATE_FILE)
-            await run_pipeline(client, cfg, state, self.selected_source, title,
-                                self.applied_delay, topics_only=topics_only)
+
+            worker_clients = []
+            if not topics_only:
+                api_id, api_hash = await self.ensure_credentials()
+                for acc in accounts_store.load_accounts():
+                    wc = TelegramClient(acc["session_name"], api_id, api_hash)
+                    await wc.connect()
+                    if await wc.is_user_authorized():
+                        worker_clients.append(wc)
+                    else:
+                        print(f"  ! аккаунт «{acc['label']}» разлогинен, пропускаю (удалите и добавьте заново)")
+                        await wc.disconnect()
+
+            try:
+                await run_pipeline(client, cfg, state, self.selected_source, title,
+                                    self.applied_delay, topics_only=topics_only, workers=worker_clients)
+            finally:
+                for wc in worker_clients:
+                    await wc.disconnect()
 
         def on_cancel():
             state = State(cfg.STATE_FILE)

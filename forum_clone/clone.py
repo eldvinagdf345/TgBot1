@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from telethon import TelegramClient
 
+from forum_clone import accounts as accounts_store
 from forum_clone import config as cfg
 from forum_clone.state import State
 from forum_clone.telegram import is_forum, resolve_chat_ref
@@ -43,6 +44,31 @@ async def pick_source_chat(client):
         print("  Некорректный номер, попробуйте ещё раз.")
 
 
+async def add_account(api_id, api_hash):
+    session_name = accounts_store.next_session_name()
+    client = TelegramClient(session_name, api_id, api_hash)
+    await client.start()
+    me = await client.get_me()
+    label = f"{me.first_name or ''} ({me.phone or me.id})".strip()
+    accounts_store.add_account(session_name, label)
+    await client.disconnect()
+    print(f"Аккаунт «{label}» добавлен как помощник для пересылки "
+          f"(добавьте его сами в группу-источник, если он там ещё не состоит).")
+
+
+async def connect_workers(api_id, api_hash):
+    workers = []
+    for acc in accounts_store.load_accounts():
+        client = TelegramClient(acc["session_name"], api_id, api_hash)
+        await client.connect()
+        if not await client.is_user_authorized():
+            print(f"  ! аккаунт «{acc['label']}» разлогинен, пропускаю (можно добавить заново через --add-account)")
+            await client.disconnect()
+            continue
+        workers.append(client)
+    return workers
+
+
 async def run(args):
     if args.switch_account:
         cfg.clear_env_keys("API_ID", "API_HASH", "SOURCE_CHAT")
@@ -54,6 +80,11 @@ async def run(args):
 
     api_id = cfg.get_api_id()
     api_hash = cfg.get_api_hash()
+
+    if args.add_account:
+        await add_account(api_id, api_hash)
+        return
+
     client = TelegramClient(cfg.SESSION_NAME, api_id, api_hash)
     await client.start()
 
@@ -87,8 +118,14 @@ async def run(args):
         raw = input(f"Название новой группы-клона [{source.title}]: ").strip()
         target_title = raw or source.title
 
-    await run_pipeline(client, cfg, state, source, target_title, cfg.DELAY_SECONDS, topics_only=args.topics_only)
-    await client.disconnect()
+    workers = [] if args.topics_only else await connect_workers(api_id, api_hash)
+    try:
+        await run_pipeline(client, cfg, state, source, target_title, cfg.DELAY_SECONDS,
+                            topics_only=args.topics_only, workers=workers)
+    finally:
+        for w in workers:
+            await w.disconnect()
+        await client.disconnect()
 
 
 def main():
@@ -98,6 +135,8 @@ def main():
     parser.add_argument("--list-chats", action="store_true", help="вывести id/username ваших чатов и выйти")
     parser.add_argument("--switch-account", action="store_true",
                          help="забыть API_ID/API_HASH/сессию/источник и залогиниться заново под другим аккаунтом")
+    parser.add_argument("--add-account", action="store_true",
+                         help="залогинить ещё один аккаунт-помощник для параллельной пересылки и выйти")
     args = parser.parse_args()
     asyncio.run(run(args))
 

@@ -1,7 +1,8 @@
 forum_clone/.env
-forum_clone/*.session
-forum_clone/*.session-journal
-forum_clone/state.json
-forum_clone/downloads/
+forum_clone/accounts.json
+*.session
+*.session-journal
+state.json
+downloads/
 __pycache__/
 *.pyc

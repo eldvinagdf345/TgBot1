@@ -8,6 +8,7 @@ from telethon.tl.functions.channels import (
     EditPhotoRequest,
     EditTitleRequest,
     GetFullChannelRequest,
+    InviteToChannelRequest,
     ToggleForumRequest,
 )
 from telethon.tl.functions.messages import (
@@ -105,6 +106,29 @@ async def copy_profile_photo(client, source, target, tmp_dir):
     finally:
         if os.path.exists(path):
             os.remove(path)
+
+
+async def ensure_worker_in_target(primary_client, target, worker_client):
+    """Adds a worker account to the (freshly created, primary-owned) target
+    group so it's able to forward messages into it. Returns True on success."""
+    me = await worker_client.get_me()
+    label = me.first_name or str(me.id)
+    try:
+        await retry_flood(primary_client, InviteToChannelRequest(channel=target, users=[me]))
+        print(f"  + аккаунт «{label}» добавлен в клон")
+        return True
+    except Exception as e:
+        print(f"  ! не удалось автоматически добавить аккаунт «{label}» в клон: {e}. "
+              f"Добавьте его в группу-клон вручную и запустите ещё раз.")
+        return False
+
+
+async def worker_can_read_source(worker_client, source):
+    try:
+        await worker_client.get_entity(source)
+        return True
+    except Exception:
+        return False
 
 
 async def copy_about(client, source, target):
