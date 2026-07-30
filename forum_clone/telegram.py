@@ -19,6 +19,16 @@ from telethon.tl.functions.messages import (
 )
 
 
+def resolve_chat_ref(value):
+    """@username / invite-link strings stay as-is; numeric chat ids (which
+    always arrive as text from .env/console input) need to be a real int
+    for Telethon's get_entity to recognize them as a peer id."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 async def retry_flood(coro_func, *args, **kwargs):
     """Calls coro_func(*args, **kwargs), retrying on Telegram's FloodWait."""
     while True:
@@ -45,7 +55,7 @@ async def get_or_create_target(client, source, cfg, state):
     title = cfg.TARGET_TITLE or source.title
 
     if cfg.TARGET_CHAT:
-        target = await client.get_entity(cfg.TARGET_CHAT)
+        target = await client.get_entity(resolve_chat_ref(cfg.TARGET_CHAT))
         forum, _ = await is_forum(client, target)
         if not forum:
             await retry_flood(client, ToggleForumRequest(channel=target, enabled=True, tabs=False))

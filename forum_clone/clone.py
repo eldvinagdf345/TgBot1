@@ -17,6 +17,7 @@ from forum_clone.telegram import (
     finalize_topic,
     get_or_create_target,
     is_forum,
+    resolve_chat_ref,
 )
 from forum_clone.links import build_link_rewriter
 from forum_clone.messages import clone_topic_messages
@@ -51,7 +52,7 @@ async def run(args):
     source_chat = cfg.SOURCE_CHAT or cfg.prompt_and_save("SOURCE_CHAT")
 
     print(f"Читаю исходный форум: {source_chat}")
-    source = await client.get_entity(source_chat)
+    source = await client.get_entity(resolve_chat_ref(source_chat))
     forum, _ = await is_forum(client, source)
     if not forum:
         raise SystemExit(
