@@ -5,6 +5,7 @@ from telethon import helpers, types
 from telethon.errors import FloodWaitError
 from telethon.tl.functions.channels import (
     CreateChannelRequest,
+    EditAdminRequest,
     EditPhotoRequest,
     EditTitleRequest,
     GetFullChannelRequest,
@@ -14,10 +15,17 @@ from telethon.tl.functions.channels import (
 from telethon.tl.functions.messages import (
     CreateForumTopicRequest,
     EditChatAboutRequest,
+    EditChatDefaultBannedRightsRequest,
     EditForumTopicRequest,
     GetForumTopicsRequest,
     UpdatePinnedForumTopicRequest,
 )
+
+# Minimal admin profile used for both the primary account and worker
+# accounts: just enough to bypass the locked-down member permissions below
+# and post anonymously (as "the group"), nothing else (no ban/invite/pin/
+# change-info/add-admins rights).
+_ANONYMOUS_POSTER_RIGHTS = types.ChatAdminRights(anonymous=True, other=True)
 
 
 def resolve_chat_ref(value):
@@ -108,19 +116,55 @@ async def copy_profile_photo(client, source, target, tmp_dir):
             os.remove(path)
 
 
+async def lock_target_permissions(client, target):
+    """Regular members get view-only access - no posting/pinning/inviting/
+    editing/creating topics. Posting still works for admins (the primary
+    account and, once promoted, worker accounts), who are exempt from this."""
+    rights = types.ChatBannedRights(
+        until_date=0,
+        send_messages=True, send_media=True, send_stickers=True, send_gifs=True,
+        send_games=True, send_inline=True, embed_links=True, send_polls=True,
+        change_info=True, invite_users=True, pin_messages=True, manage_topics=True,
+        send_photos=True, send_videos=True, send_roundvideos=True, send_audios=True,
+        send_voices=True, send_docs=True, send_plain=True,
+    )
+    try:
+        await retry_flood(client, EditChatDefaultBannedRightsRequest(peer=target, banned_rights=rights))
+        print("  + участникам клона оставлен только просмотр")
+    except Exception as e:
+        print(f"  ! не удалось ограничить права участников: {e}")
+
+
+async def make_anonymous_admin(client, target, user, label):
+    """Promotes `user` to a minimal anonymous admin - just enough to post
+    despite the locked-down member permissions, with messages shown as sent
+    by the group itself rather than a personal account."""
+    try:
+        await retry_flood(client, EditAdminRequest(
+            channel=target, user_id=user, admin_rights=_ANONYMOUS_POSTER_RIGHTS, rank="",
+        ))
+        print(f"  + «{label}» - анонимный админ клона (сообщения будут от имени группы)")
+        return True
+    except Exception as e:
+        print(f"  ! не удалось сделать «{label}» анонимным админом: {e}")
+        return False
+
+
 async def ensure_worker_in_target(primary_client, target, worker_client):
     """Adds a worker account to the (freshly created, primary-owned) target
-    group so it's able to forward messages into it. Returns True on success."""
+    group and promotes it to an anonymous admin so it can post there despite
+    the locked-down member permissions. Returns True on success."""
     me = await worker_client.get_me()
     label = me.first_name or str(me.id)
     try:
         await retry_flood(primary_client, InviteToChannelRequest(channel=target, users=[me]))
         print(f"  + аккаунт «{label}» добавлен в клон")
-        return True
     except Exception as e:
         print(f"  ! не удалось автоматически добавить аккаунт «{label}» в клон: {e}. "
               f"Добавьте его в группу-клон вручную и запустите ещё раз.")
         return False
+
+    return await make_anonymous_admin(primary_client, target, me, label)
 
 
 async def worker_can_read_source(worker_client, source):

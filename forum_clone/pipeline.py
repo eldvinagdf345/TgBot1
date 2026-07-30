@@ -11,6 +11,8 @@ from .telegram import (
     fetch_all_topics,
     finalize_topic,
     get_or_create_target,
+    lock_target_permissions,
+    make_anonymous_admin,
     worker_can_read_source,
 )
 
@@ -50,6 +52,9 @@ async def run_pipeline(client, cfg, state, source, target_title, delay, topics_o
     target = await get_or_create_target(client, source, cfg, state, title=target_title)
     await copy_about(client, source, target)
     await copy_profile_photo(client, source, target, cfg.DOWNLOAD_DIR)
+    await lock_target_permissions(client, target)
+    me = await client.get_me()
+    await make_anonymous_admin(client, target, me, me.first_name or "основной аккаунт")
 
     usable_workers = []
     for w in workers or []:
