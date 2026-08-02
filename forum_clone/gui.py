@@ -8,7 +8,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import customtkinter as ctk
 from telethon import TelegramClient
-from telethon.errors import SessionPasswordNeededError
 
 from forum_clone import accounts as accounts_store
 from forum_clone import config as cfg
@@ -311,26 +310,22 @@ class App(ctk.CTk):
 
         return int(api_id), api_hash
 
+    def _ask_required(self, title, message, mask=False):
+        value = self.ask(title, message, mask)
+        if not value:
+            raise RuntimeError("Вход отменён")
+        return value
+
     async def ensure_login(self, client):
-        await client.connect()
-        if await client.is_user_authorized():
-            return
-        phone = await asyncio.to_thread(self.ask, "Вход в Telegram",
-                                         "Номер телефона (с '+' и кодом страны):")
-        if not phone:
-            raise RuntimeError("Вход отменён")
-        await client.send_code_request(phone)
-        code = await asyncio.to_thread(self.ask, "Вход в Telegram", "Код из Telegram:")
-        if not code:
-            raise RuntimeError("Вход отменён")
-        try:
-            await client.sign_in(phone=phone, code=code)
-        except SessionPasswordNeededError:
-            password = await asyncio.to_thread(
-                self.ask, "Вход в Telegram", "Пароль облачной 2FA:", True)
-            if not password:
-                raise RuntimeError("Вход отменён")
-            await client.sign_in(password=password)
+        # Delegates to Telethon's own battle-tested start() (same one the
+        # CLI uses successfully) instead of hand-rolling connect/send_code/
+        # sign_in - just swaps its default input()-based prompts for our
+        # modal dialogs. Does nothing if the session is already authorized.
+        await client.start(
+            phone=lambda: self._ask_required("Вход в Telegram", "Номер телефона (с '+' и кодом страны):"),
+            code_callback=lambda: self._ask_required("Вход в Telegram", "Код из Telegram:"),
+            password=lambda: self._ask_required("Вход в Telegram", "Пароль облачной 2FA:", True),
+        )
 
     async def _connect(self):
         if self.client is None:
