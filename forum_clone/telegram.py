@@ -172,12 +172,16 @@ async def ensure_worker_in_target(primary_client, target, worker_client):
 
 
 async def worker_can_read_source(worker_client, source):
-    # Resolve by bare id (not the already-resolved object) so this actually
-    # asks the worker's own session, instead of trivially echoing back an
-    # entity it never independently verified access to.
+    # A freshly logged-in session has no cached access_hash for anything
+    # yet, even for chats it's genuinely a member of - iterating dialogs
+    # populates that cache from the server (this is what real membership
+    # actually looks like from the session's point of view), which is also
+    # required for this worker's later raw API calls against source to work.
     try:
-        await worker_client.get_entity(source.id)
-        return True
+        async for d in worker_client.iter_dialogs():
+            if d.id == source.id:
+                return True
+        return False
     except Exception:
         return False
 
