@@ -9,6 +9,7 @@ from telethon.tl.functions.channels import (
     EditPhotoRequest,
     EditTitleRequest,
     GetFullChannelRequest,
+    GetParticipantRequest,
     InviteToChannelRequest,
     ToggleForumRequest,
 )
@@ -23,10 +24,12 @@ from telethon.tl.functions.messages import (
 
 # Minimal admin profile used for both the primary account and worker
 # accounts: just enough to bypass the locked-down member permissions below,
-# post anonymously (as "the group"), and pin messages (needed to mirror
-# pinned-message status from the source) - nothing else (no ban/invite/
-# change-info/add-admins rights).
-_ANONYMOUS_POSTER_RIGHTS = types.ChatAdminRights(anonymous=True, other=True, pin_messages=True)
+# post anonymously (as "the group"), pin messages, and manage topics
+# (needed to close/pin the topics each account itself finishes) - nothing
+# else (no ban/invite/change-info/add-admins rights).
+_ANONYMOUS_POSTER_RIGHTS = types.ChatAdminRights(
+    anonymous=True, other=True, pin_messages=True, manage_topics=True,
+)
 
 
 def resolve_chat_ref(value):
@@ -154,11 +157,19 @@ async def make_anonymous_admin(client, target, user, label):
         await retry_flood(client, EditAdminRequest(
             channel=target, user_id=user, admin_rights=_ANONYMOUS_POSTER_RIGHTS, rank="",
         ))
-        print(f"  + «{label}» - анонимный админ клона (сообщения будут от имени группы)")
-        return True
     except Exception as e:
         print(f"  ! не удалось сделать «{label}» анонимным админом: {e}")
         return False
+
+    try:
+        result = await retry_flood(client, GetParticipantRequest(channel=target, participant=user))
+        status = type(result.participant).__name__
+        print(f"  + «{label}» - анонимный админ клона (статус подтверждён: {status})")
+    except Exception as e:
+        print(f"  + «{label}» назначен анонимным админом (не удалось подтвердить статус: {e})")
+
+    await asyncio.sleep(2)  # give Telegram a moment to propagate the new rights
+    return True
 
 
 async def ensure_worker_in_target(primary_client, target, worker_client):
