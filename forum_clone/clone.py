@@ -47,7 +47,7 @@ async def pick_source_chat(client):
 async def add_account(api_id, api_hash):
     session_name = accounts_store.next_session_name()
     client = TelegramClient(session_name, api_id, api_hash)
-    await client.start()
+    await client.start(force_sms=True)
     me = await client.get_me()
     label = f"{me.first_name or ''} ({me.phone or me.id})".strip()
     accounts_store.add_account(session_name, label)
@@ -86,7 +86,7 @@ async def run(args):
         return
 
     client = TelegramClient(cfg.SESSION_NAME, api_id, api_hash)
-    await client.start()
+    await client.start(force_sms=True)
 
     if args.list_chats:
         await list_chats(client)

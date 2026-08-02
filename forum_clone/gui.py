@@ -325,6 +325,7 @@ class App(ctk.CTk):
             phone=lambda: self._ask_required("Вход в Telegram", "Номер телефона (с '+' и кодом страны):"),
             code_callback=lambda: self._ask_required("Вход в Telegram", "Код из Telegram:"),
             password=lambda: self._ask_required("Вход в Telegram", "Пароль облачной 2FA:", True),
+            force_sms=True,
         )
 
     async def _connect(self):
