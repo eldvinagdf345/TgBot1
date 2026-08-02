@@ -86,8 +86,5 @@ async def forward_topic_messages(client, source, target, source_topic_id, target
         if unit_grouped_id is None:
             await flush()
 
-        if count and count % 50 == 0:
-            print(f"    … переслано {count} сообщений")
-
     await flush()
     return count

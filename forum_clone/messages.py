@@ -108,9 +108,6 @@ async def clone_topic_messages(client, source, target, source_topic_id, target_t
         state.set_last_msg_id(source_topic_id, msg.id)
         count += 1
 
-        if count and count % 20 == 0:
-            print(f"    … скопировано {count} сообщений")
-
     await flush()
     return count
 

@@ -139,6 +139,13 @@ async def lock_target_permissions(client, target):
         print(f"  ! не удалось ограничить права участников: {e}")
 
 
+def account_label(me):
+    """Name + phone, so two accounts sharing the same display name (a common
+    real-world case) are still distinguishable in the log."""
+    name = me.first_name or "без имени"
+    return f"{name} ({me.phone or me.id})"
+
+
 async def make_anonymous_admin(client, target, user, label):
     """Promotes `user` to a minimal anonymous admin - just enough to post
     despite the locked-down member permissions, with messages shown as sent
@@ -159,7 +166,7 @@ async def ensure_worker_in_target(primary_client, target, worker_client):
     group and promotes it to an anonymous admin so it can post there despite
     the locked-down member permissions. Returns True on success."""
     me = await worker_client.get_me()
-    label = me.first_name or str(me.id)
+    label = account_label(me)
     try:
         await retry_flood(primary_client, InviteToChannelRequest(channel=target, users=[me]))
         print(f"  + аккаунт «{label}» добавлен в клон")

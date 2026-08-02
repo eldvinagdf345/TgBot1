@@ -4,6 +4,7 @@ from .forward import forward_topic_messages
 from .links import build_link_rewriter
 from .messages import clone_topic_messages
 from .telegram import (
+    account_label,
     copy_about,
     copy_profile_photo,
     ensure_topic,
@@ -42,15 +43,15 @@ async def _forward_worker(client, source, target, topics, mapping, state, delay,
     total = 0
     for t in topics:
         target_topic_id = mapping[t.id]
-        print(f"[{label}] Тема «{t.title}» (источник #{t.id} -> клон #{target_topic_id})")
+        print(f"[{label}] -> «{t.title}»")
         try:
             n = await forward_topic_messages(client, source, target, t.id, target_topic_id, state, delay)
             total += n
-            print(f"[{label}]   = {n} новых сообщений переслано")
+            if n:
+                print(f"[{label}]    готово: {n} сообщений")
             await finalize_topic(client, target, t, target_topic_id)
         except Exception as e:
-            print(f"[{label}]   ! ошибка в теме «{t.title}»: {e}. "
-                  f"Пропускаю эту тему сейчас, доберём при следующем запуске.")
+            print(f"[{label}]    ОШИБКА в «{t.title}»: {e} - доберём при следующем запуске")
     return total
 
 
@@ -66,16 +67,20 @@ async def run_pipeline(client, cfg, state, source, target_title, delay, topics_o
     await copy_profile_photo(client, source, target, cfg.DOWNLOAD_DIR)
     await lock_target_permissions(client, target)
     me = await client.get_me()
-    await make_anonymous_admin(client, target, me, me.first_name or "основной аккаунт")
+    primary_label = f"{account_label(me)} [основной]"
+    await make_anonymous_admin(client, target, me, primary_label)
 
     usable_workers = []
+    worker_labels = {}
     for w in workers or []:
+        wme = await w.get_me()
+        wlabel = account_label(wme)
         if await worker_can_read_source(w, source):
             if await ensure_worker_in_target(client, target, w):
                 usable_workers.append(w)
+                worker_labels[id(w)] = wlabel
         else:
-            me = await w.get_me()
-            print(f"  ! аккаунт «{me.first_name or me.id}» не состоит в группе-источнике - "
+            print(f"  ! «{wlabel}» не состоит в группе-источнике - "
                   f"добавьте его туда вручную. Пропускаю этот аккаунт для переноса.")
 
     print("Считываю список тем источника...")
@@ -100,14 +105,15 @@ async def run_pipeline(client, cfg, state, source, target_title, delay, topics_o
 
     warnings = []
     all_clients = [client] + usable_workers
+    all_labels = [primary_label] + [worker_labels[id(w)] for w in usable_workers]
     buckets = _distribute(regular_topics, len(all_clients))
     if usable_workers:
         sizes = ", ".join(str(len(b)) for b in buckets)
         print(f"Распределяю {len(regular_topics)} тем между {len(all_clients)} аккаунтами ({sizes} тем на каждого)")
 
     results = await asyncio.gather(*[
-        _forward_worker(c, source, target, b, mapping, state, delay, f"аккаунт {i + 1}")
-        for i, (c, b) in enumerate(zip(all_clients, buckets)) if b
+        _forward_worker(c, source, target, b, mapping, state, delay, lbl)
+        for c, lbl, b in zip(all_clients, all_labels, buckets) if b
     ], return_exceptions=True)
 
     total = 0
