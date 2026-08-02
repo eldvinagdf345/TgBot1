@@ -85,6 +85,7 @@ class App(ctk.CTk):
         self.current_future = None
         self.applied_delay = cfg.DELAY_SECONDS
         self.worker_rows = []
+        self._adding_worker = threading.Lock()
 
         self._build_ui()
         self._refresh_workers_panel()
@@ -183,7 +184,8 @@ class App(ctk.CTk):
         self.start_btn.configure(state=state)
         self.refresh_btn.configure(state=state)
         self.switch_account_btn.configure(state=state)
-        self.add_worker_btn.configure(state=state)
+        # Adding a worker only touches its own new session file/accounts.json
+        # - safe to do while a transfer is running, and picked up next run.
         for _, remove_btn in self.worker_rows:
             remove_btn.configure(state=state)
         self.stop_btn.configure(state="normal" if busy else "disabled")
@@ -287,6 +289,24 @@ class App(ctk.CTk):
 
         future = asyncio.run_coroutine_threadsafe(coro, self.loop)
         self.current_future = future
+        future.add_done_callback(_on_complete)
+
+    def run_async_side(self, coro, on_done=None):
+        """Like run_async, but for operations allowed to run alongside the
+        main transfer (e.g. adding a worker account) - doesn't touch
+        current_future (so Stop still targets only the main transfer) or
+        redirect stdout (which the main transfer may already be using)."""
+        self._loop_ready.wait()
+
+        def _on_complete(fut):
+            try:
+                fut.result()
+            except Exception as e:
+                self.log(f"\n❌ Ошибка: {e}\n")
+            if on_done:
+                self.after(0, on_done)
+
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
         future.add_done_callback(_on_complete)
 
     # ---------- Telegram login ----------
@@ -400,9 +420,9 @@ class App(ctk.CTk):
         self.on_refresh_dialogs()
 
     def on_add_worker(self):
-        if self.busy:
+        if not self._adding_worker.acquire(blocking=False):
             return
-        self.set_busy(True)
+        self.add_worker_btn.configure(state="disabled")
         self.log("\nДобавляю аккаунт-помощник...\n")
 
         async def task():
@@ -418,7 +438,11 @@ class App(ctk.CTk):
                       f"добавьте его туда сами, иначе он будет пропущен при переносе.\n")
             self.after(0, self._refresh_workers_panel)
 
-        self.run_async(task(), on_done=lambda: self.set_busy(False))
+        def done():
+            self.add_worker_btn.configure(state="normal")
+            self._adding_worker.release()
+
+        self.run_async_side(task(), on_done=done)
 
     def on_remove_worker(self, session_name):
         if self.busy:
