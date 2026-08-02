@@ -35,10 +35,14 @@ async def _forward_worker(client, source, target, topics, mapping, state, delay,
     for t in topics:
         target_topic_id = mapping[t.id]
         print(f"[{label}] Тема «{t.title}» (источник #{t.id} -> клон #{target_topic_id})")
-        n = await forward_topic_messages(client, source, target, t.id, target_topic_id, state, delay)
-        total += n
-        print(f"[{label}]   = {n} новых сообщений переслано")
-        await finalize_topic(client, target, t, target_topic_id)
+        try:
+            n = await forward_topic_messages(client, source, target, t.id, target_topic_id, state, delay)
+            total += n
+            print(f"[{label}]   = {n} новых сообщений переслано")
+            await finalize_topic(client, target, t, target_topic_id)
+        except Exception as e:
+            print(f"[{label}]   ! ошибка в теме «{t.title}»: {e}. "
+                  f"Пропускаю эту тему сейчас, доберём при следующем запуске.")
     return total
 
 
@@ -96,8 +100,15 @@ async def run_pipeline(client, cfg, state, source, target_title, delay, topics_o
     results = await asyncio.gather(*[
         _forward_worker(c, source, target, b, mapping, state, delay, f"аккаунт {i + 1}")
         for i, (c, b) in enumerate(zip(all_clients, buckets)) if b
-    ])
-    total = sum(results)
+    ], return_exceptions=True)
+
+    total = 0
+    for r in results:
+        if isinstance(r, Exception):
+            print(f"  ! один из аккаунтов прервался с ошибкой: {r}. "
+                  f"Его оставшиеся темы доберутся при следующем запуске.")
+        else:
+            total += r
 
     if nav_topic:
         nav_target_id = await ensure_topic(client, target, nav_topic, state)

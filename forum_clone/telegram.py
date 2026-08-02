@@ -2,7 +2,7 @@ import asyncio
 import os
 
 from telethon import helpers, types
-from telethon.errors import FloodWaitError
+from telethon.errors import ChatNotModifiedError, FloodWaitError
 from telethon.tl.functions.channels import (
     CreateChannelRequest,
     EditAdminRequest,
@@ -132,6 +132,9 @@ async def lock_target_permissions(client, target):
     try:
         await retry_flood(client, EditChatDefaultBannedRightsRequest(peer=target, banned_rights=rights))
         print("  + участникам клона оставлен только просмотр")
+    except ChatNotModifiedError:
+        # Already locked down from an earlier run - nothing to do.
+        pass
     except Exception as e:
         print(f"  ! не удалось ограничить права участников: {e}")
 
