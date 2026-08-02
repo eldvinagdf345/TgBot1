@@ -186,7 +186,10 @@ async def worker_can_read_source(worker_client, source):
     # required for this worker's later raw API calls against source to work.
     try:
         async for d in worker_client.iter_dialogs():
-            if d.id == source.id:
+            # dialog.id is the "marked" id (-100... for channels), while
+            # source.id is the raw Channel id - compare via the entity's own
+            # raw id instead, or every comparison here would always be False.
+            if getattr(d.entity, "id", None) == source.id:
                 return True
         return False
     except Exception:
