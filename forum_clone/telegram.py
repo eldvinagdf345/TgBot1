@@ -186,7 +186,18 @@ async def ensure_worker_in_target(primary_client, target, worker_client):
               f"Добавьте его в группу-клон вручную и запустите ещё раз.")
         return False
 
-    return await make_anonymous_admin(primary_client, target, me, label)
+    # `me` was resolved by the WORKER's own session (get_me() often carries
+    # no usable access_hash for anyone else to reference). Re-resolve it
+    # through the primary's session - now valid, since primary just saw this
+    # user via the invite above - before using it in further primary-issued
+    # requests, same fix as for source/target channel entities elsewhere.
+    try:
+        primary_view_of_worker = await primary_client.get_entity(me.id)
+    except Exception as e:
+        print(f"  ! основной аккаунт не смог найти «{label}» после приглашения: {e}")
+        return False
+
+    return await make_anonymous_admin(primary_client, target, primary_view_of_worker, label)
 
 
 async def worker_can_read_source(worker_client, source):
