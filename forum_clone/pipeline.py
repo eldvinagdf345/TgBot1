@@ -31,6 +31,14 @@ def _distribute(topics, n):
 
 
 async def _forward_worker(client, source, target, topics, mapping, state, delay, label):
+    # Each account must resolve the source/target entities through its OWN
+    # session rather than reuse the primary's already-resolved objects -
+    # some raw API calls (e.g. GetRepliesRequest, used for topic filtering)
+    # reject an entity that wasn't obtained by that same session, even
+    # though the id/access_hash values look identical.
+    source = await client.get_entity(source.id)
+    target = await client.get_entity(target.id)
+
     total = 0
     for t in topics:
         target_topic_id = mapping[t.id]

@@ -172,8 +172,11 @@ async def ensure_worker_in_target(primary_client, target, worker_client):
 
 
 async def worker_can_read_source(worker_client, source):
+    # Resolve by bare id (not the already-resolved object) so this actually
+    # asks the worker's own session, instead of trivially echoing back an
+    # entity it never independently verified access to.
     try:
-        await worker_client.get_entity(source)
+        await worker_client.get_entity(source.id)
         return True
     except Exception:
         return False
