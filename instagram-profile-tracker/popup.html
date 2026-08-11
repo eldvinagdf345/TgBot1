@@ -42,6 +42,20 @@
     </div>
 
     <div id="status"></div>
+
+    <hr class="sep" />
+
+    <h1>🚫 База повторов</h1>
+    <p class="hint">
+      Ники здесь никогда не будут считаны заново (ни автослежением, ни
+      выделением) — ни в рабочий список выше, ни куда-либо ещё. Отдельная
+      база, никак не связана со списком выше. Сейчас в ней:
+      <span id="seenCount">0</span>.
+    </p>
+    <textarea id="seenInput" rows="3" placeholder="Ники по одному на строку или через запятую"></textarea>
+    <div class="row">
+      <button id="addSeenBtn" class="primary">➕ Добавить в базу повторов</button>
+    </div>
   </div>
   <script src="popup.js"></script>
 </body>

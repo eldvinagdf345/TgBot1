@@ -176,6 +176,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getSeenSet().then(({ seenUsernames }) => sendResponse({ count: seenUsernames.length }));
     return true;
   }
+  if (msg.type === "ADD_TO_SEEN") {
+    (async () => {
+      const { seenUsernames, seenSet } = await getSeenSet();
+      for (const username of msg.usernames) {
+        const key = username.toLowerCase();
+        if (seenSet.has(key)) continue;
+        seenSet.add(key);
+        seenUsernames.push(username);
+      }
+      await chrome.storage.local.set({ seenUsernames });
+      sendResponse({ ok: true, count: seenUsernames.length });
+    })();
+    return true;
+  }
   if (msg.type === "CLEAR_SEEN") {
     chrome.storage.local.set({ seenUsernames: [] }).then(() => sendResponse({ ok: true }));
     return true;

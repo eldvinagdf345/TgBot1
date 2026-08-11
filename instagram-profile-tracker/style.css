@@ -137,3 +137,23 @@ code {
 }
 .platform-badge.platform-instagram { background: #2563EB33; color: #60A5FA; }
 .platform-badge.platform-threads { background: #F1F5F933; color: #F1F5F9; }
+
+.sep {
+  border: none;
+  border-top: 1px solid #1F2937;
+  margin: 16px 0;
+}
+
+textarea {
+  width: 100%;
+  background: #111827;
+  border: 1px solid #1F2937;
+  border-radius: 8px;
+  color: #F1F5F9;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}

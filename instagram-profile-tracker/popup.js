@@ -128,6 +128,30 @@ document.getElementById("trackingToggle").addEventListener("change", async (e) =
   updateStatusText(enabled);
 });
 
+async function refreshSeenCount() {
+  const res = await chrome.runtime.sendMessage({ type: "GET_SEEN_COUNT" });
+  document.getElementById("seenCount").textContent = res?.count ?? 0;
+}
+
+document.getElementById("addSeenBtn").addEventListener("click", async () => {
+  const raw = document.getElementById("seenInput").value;
+  const usernames = raw
+    .split(/[\n,]/)
+    .map((s) => s.trim().replace(/^@/, ""))
+    .filter(Boolean);
+
+  if (usernames.length === 0) {
+    setStatus("Впиши хотя бы один ник.");
+    return;
+  }
+
+  const res = await chrome.runtime.sendMessage({ type: "ADD_TO_SEEN", usernames });
+  setStatus(`✅ В базе повторов теперь: ${res.count}`);
+  document.getElementById("seenInput").value = "";
+  refreshSeenCount();
+});
+
 render();
 loadTrackingState();
 loadSendAsLink();
+refreshSeenCount();
