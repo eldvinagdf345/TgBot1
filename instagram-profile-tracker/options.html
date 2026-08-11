@@ -29,6 +29,18 @@
       <button id="saveBtn" class="primary">Сохранить</button>
     </div>
     <div id="status"></div>
+
+    <h1 style="margin-top: 24px;">База уже виденных ников</h1>
+    <p class="hint">
+      Отдельно от рабочего списка в попапе — сюда попадает каждый
+      добавленный ник и остаётся навсегда, даже после отправки в Telegram
+      и очистки рабочего списка. Нужна, чтобы при повторном скане тех же
+      лайков/комментов старые ники не считывались заново.
+    </p>
+    <p class="hint">Всего в базе: <span id="seenCount">0</span></p>
+    <div class="row">
+      <button id="clearSeenBtn" class="danger">🗑 Очистить базу целиком</button>
+    </div>
   </div>
   <script src="options.js"></script>
 </body>

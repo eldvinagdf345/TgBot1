@@ -56,16 +56,27 @@ function updateBadge(count) {
   chrome.action.setBadgeBackgroundColor({ color: "#2563EB" });
 }
 
+// Отдельная от "profiles" постоянная база всех ников, что когда-либо
+// добавлялись — не чистится вместе с рабочим списком (по кнопке "Очистить"
+// или после отправки). Нужна, чтобы при повторном скане тех же лайков/
+// комментов уже виденные ники не всплывали заново как "новые".
+async function getSeenSet() {
+  const { seenUsernames = [] } = await chrome.storage.local.get("seenUsernames");
+  return { seenUsernames, seenSet: new Set(seenUsernames.map((s) => s.toLowerCase())) };
+}
+
 async function addUsername(username, platform) {
   const key = username.toLowerCase();
   if (processed.has(key)) return;
   processed.add(key);
 
-  const { profiles = [] } = await chrome.storage.local.get("profiles");
-  if (profiles.some((p) => p.username.toLowerCase() === key)) return;
+  const { seenUsernames, seenSet } = await getSeenSet();
+  if (seenSet.has(key)) return; // уже был в базе раньше
 
+  const { profiles = [] } = await chrome.storage.local.get("profiles");
   profiles.push({ username, platform, addedAt: Date.now() });
-  await chrome.storage.local.set({ profiles });
+  seenUsernames.push(username);
+  await chrome.storage.local.set({ profiles, seenUsernames });
   updateBadge(profiles.length);
 }
 
@@ -143,21 +154,30 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       const platform = msg.platform === "threads" ? "threads" : "instagram";
       const { profiles = [] } = await chrome.storage.local.get("profiles");
-      const existing = new Set(profiles.map((p) => p.username.toLowerCase()));
+      const { seenUsernames, seenSet } = await getSeenSet();
       let added = 0;
       for (const username of msg.usernames) {
         const key = username.toLowerCase();
-        if (existing.has(key)) continue;
-        existing.add(key);
+        if (seenSet.has(key)) continue;
+        seenSet.add(key);
         profiles.push({ username, platform, addedAt: Date.now() });
+        seenUsernames.push(username);
         added++;
       }
       if (added > 0) {
-        await chrome.storage.local.set({ profiles });
+        await chrome.storage.local.set({ profiles, seenUsernames });
         updateBadge(profiles.length);
       }
-      sendResponse({ ok: true, added });
+      sendResponse({ ok: true, added, skipped: msg.usernames.length - added });
     })();
+    return true;
+  }
+  if (msg.type === "GET_SEEN_COUNT") {
+    getSeenSet().then(({ seenUsernames }) => sendResponse({ count: seenUsernames.length }));
+    return true;
+  }
+  if (msg.type === "CLEAR_SEEN") {
+    chrome.storage.local.set({ seenUsernames: [] }).then(() => sendResponse({ ok: true }));
     return true;
   }
 });
