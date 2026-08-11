@@ -1,22 +1,32 @@
-// Ссылка на профиль в разметке Instagram выглядит как href="/username/".
-// Это самый надёжный способ отличить ник от отображаемого имени рядом —
-// но в некоторых списках (например "Отметки Нравится") Instagram рисует
-// строки без <a>, просто текстом с обработчиком клика. Поэтому это лишь
-// первая попытка, а не единственная.
+// Ссылка на профиль в разметке Instagram выглядит как href="/username/",
+// а в Threads — как href="/@username" (с "@" в пути). Это самый надёжный
+// способ отличить ник от отображаемого имени рядом — но в некоторых списках
+// (например "Отметки Нравится") сайт рисует строки без <a>, просто текстом
+// с обработчиком клика. Поэтому это лишь первая попытка, а не единственная.
 const USERNAME_HREF_RE = /^\/([A-Za-z0-9._]{1,30})\/?$/;
-// Instagram-ники — только латиница, цифры, точка и подчёркивание, без
-// пробелов. Отображаемое имя почти всегда содержит пробел, кириллицу или
+const THREADS_HREF_RE = /^\/@([A-Za-z0-9._]{1,30})\/?$/;
+// Ники в обеих сетях — только латиница, цифры, точка и подчёркивание, без
+// пробелов (в Threads ещё и видимый текст на странице часто идёт с "@"
+// впереди). Отображаемое имя почти всегда содержит пробел, кириллицу или
 // эмодзи, поэтому по этому шаблону их можно различить в чистом тексте.
-const USERNAME_LINE_RE = /^[A-Za-z0-9._]{1,30}$/;
+const USERNAME_LINE_RE = /^@?[A-Za-z0-9._]{1,30}$/;
 const STOPWORDS = new Set([
   "follow", "following", "requested", "remove", "message", "unfollow",
+  "reply", "repost", "quote", "share", "like", "likes",
   "подписаться", "отписаться", "подписки", "запрошено", "написать",
   "удалить", "заблокировать", "block", "ok", "cancel", "отмена",
+  "ответить", "поделиться", "цитировать", "репост", "нравится",
 ]);
+
+function isThreadsSite() {
+  return location.hostname.includes("threads.");
+}
 
 function usernameFromHref(href) {
   if (!href) return null;
-  const match = href.match(USERNAME_HREF_RE);
+  let match = href.match(THREADS_HREF_RE);
+  if (match) return match[1];
+  match = href.match(USERNAME_HREF_RE);
   return match ? match[1] : null;
 }
 
@@ -52,7 +62,7 @@ function relativeLuminance(r, g, b) {
   return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
 }
 
-// Instagram красит ник почти белым (главный текст), а имя под ним —
+// Сайт красит ник почти белым (главный текст), а имя под ним —
 // приглушённым серым и/или с пониженной прозрачностью (второстепенный
 // текст). Charset у имени вроде "DS" может случайно совпасть с шаблоном
 // ника, поэтому дополнительно смотрим на реальный цвет текста в DOM.
@@ -91,10 +101,10 @@ function extractFromTextNodes(selection) {
     while ((node = walker.nextNode())) {
       const text = node.textContent.trim();
       if (!USERNAME_LINE_RE.test(text)) continue;
-      if (STOPWORDS.has(text.toLowerCase())) continue;
+      if (STOPWORDS.has(text.toLowerCase().replace(/^@/, ""))) continue;
       const el = node.parentElement;
       if (el && isMutedText(el)) continue; // похоже на имя, а не на ник
-      usernames.add(text);
+      usernames.add(text.replace(/^@/, ""));
     }
   }
   return usernames;
@@ -119,7 +129,8 @@ function extractUsernamesFromSelection() {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "READ_SELECTION") {
-    sendResponse(extractUsernamesFromSelection());
+    const result = extractUsernamesFromSelection();
+    sendResponse({ ...result, platform: isThreadsSite() ? "threads" : "instagram" });
   }
 });
 
@@ -163,9 +174,12 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
-  chrome.runtime.sendMessage({ type: "ADD_USERNAMES", usernames: result.usernames }, (res) => {
-    const added = res?.added || 0;
-    const skipped = result.usernames.length - added;
-    showToast(`✅ Добавлено: ${added}` + (skipped > 0 ? ` (уже было: ${skipped})` : ""));
-  });
+  chrome.runtime.sendMessage(
+    { type: "ADD_USERNAMES", usernames: result.usernames, platform: isThreadsSite() ? "threads" : "instagram" },
+    (res) => {
+      const added = res?.added || 0;
+      const skipped = result.usernames.length - added;
+      showToast(`✅ Добавлено: ${added}` + (skipped > 0 ? ` (уже было: ${skipped})` : ""));
+    }
+  );
 });

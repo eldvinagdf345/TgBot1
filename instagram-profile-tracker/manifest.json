@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Instagram Profile Tracker → Telegram",
-  "version": "1.0.0",
-  "description": "Запоминает никнеймы Instagram-профилей, которые вы посещаете, и отправляет список в вашего Telegram-бота.",
+  "name": "Profile Tracker → Telegram",
+  "version": "1.1.0",
+  "description": "Запоминает никнеймы профилей Instagram и Threads, которые вы посещаете, и отправляет список в вашего Telegram-бота.",
   "permissions": ["storage", "webNavigation", "activeTab"],
   "host_permissions": [
     "https://www.instagram.com/*",
+    "https://www.threads.com/*",
+    "https://www.threads.net/*",
     "https://api.telegram.org/*"
   ],
   "background": {
@@ -13,14 +15,18 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.instagram.com/*"],
+      "matches": [
+        "https://www.instagram.com/*",
+        "https://www.threads.com/*",
+        "https://www.threads.net/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Instagram Profile Tracker"
+    "default_title": "Profile Tracker"
   },
   "options_page": "options.html"
 }

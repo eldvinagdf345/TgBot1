@@ -127,3 +127,13 @@ code {
   transform: translateX(18px);
   background-color: #F1F5F9;
 }
+
+.platform-badge {
+  font-size: 9px;
+  font-weight: bold;
+  padding: 1px 4px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.platform-badge.platform-instagram { background: #2563EB33; color: #60A5FA; }
+.platform-badge.platform-threads { background: #F1F5F933; color: #F1F5F9; }
