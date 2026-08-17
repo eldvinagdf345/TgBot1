@@ -309,41 +309,74 @@ async function exportCookies(accountId) {
   return { ok: true, filePath, count: cookies.length };
 }
 
-async function importCookies(accountId) {
-  const account = accounts.find((a) => a.id === accountId);
-  if (!account) return { ok: false, error: "Аккаунт не найден" };
-
+async function pickCookiesFile() {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: "Выбери файл с cookies",
-    filters: [{ name: "JSON", extensions: ["json"] }],
+    filters: [{ name: "JSON / текст", extensions: ["json", "txt"] }],
     properties: ["openFile"],
   });
   if (canceled || filePaths.length === 0) return { ok: false, error: "Отменено" };
-
-  let cookies;
   try {
-    cookies = JSON.parse(fs.readFileSync(filePaths[0], "utf-8"));
-    if (!Array.isArray(cookies)) throw new Error("не массив");
+    return { ok: true, text: fs.readFileSync(filePaths[0], "utf-8") };
   } catch (err) {
-    return { ok: false, error: `Файл повреждён или не в том формате: ${err.message}` };
+    return { ok: false, error: err.message };
+  }
+}
+
+// Принимает либо JSON-массив (наш экспорт, Cookie-Editor и т.п.), либо
+// обычную строку вида "name1=value1; name2=value2; ..." — так cookies
+// чаще всего копируют вручную откуда угодно (DevTools, другой источник).
+function parseCookiesInput(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // не JSON — разбираем как строку "name=value; name=value"
+  }
+
+  return trimmed
+    .split(";")
+    .map((pair) => pair.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const idx = pair.indexOf("=");
+      if (idx === -1) return null;
+      const name = pair.slice(0, idx).trim();
+      const value = pair.slice(idx + 1).trim();
+      return name ? { name, value } : null;
+    })
+    .filter(Boolean);
+}
+
+async function importCookiesFromText(accountId, text) {
+  const account = accounts.find((a) => a.id === accountId);
+  if (!account) return { ok: false, error: "Аккаунт не найден" };
+
+  const cookies = parseCookiesInput(text);
+  if (cookies.length === 0) {
+    return { ok: false, error: "Не удалось распознать ни одной cookie в тексте" };
   }
 
   const ses = session.fromPartition(account.partition);
   let imported = 0;
   for (const c of cookies) {
     try {
-      const protocol = c.secure ? "https:" : "http:";
-      const domain = String(c.domain || "").replace(/^\./, "");
+      const secure = c.secure !== false;
+      const protocol = secure ? "https:" : "http:";
+      const domain = String(c.domain || "instagram.com").replace(/^\./, "");
       const setDetails = {
         url: `${protocol}//${domain}${c.path || "/"}`,
         name: c.name,
         value: c.value,
-        domain: c.domain,
-        path: c.path,
-        secure: c.secure,
-        httpOnly: c.httpOnly,
-        sameSite: c.sameSite,
+        domain: c.domain || `.${domain}`,
+        path: c.path || "/",
+        secure,
+        httpOnly: !!c.httpOnly,
       };
+      if (c.sameSite) setDetails.sameSite = c.sameSite;
       if (!c.session && c.expirationDate) setDetails.expirationDate = c.expirationDate;
       await ses.cookies.set(setDetails);
       imported++;
@@ -525,7 +558,8 @@ ipcMain.handle("accounts:setLdIndex", (_e, accountId, ldIndex) => {
 });
 
 ipcMain.handle("accounts:exportCookies", (_e, accountId) => exportCookies(accountId));
-ipcMain.handle("accounts:importCookies", (_e, accountId) => importCookies(accountId));
+ipcMain.handle("accounts:pickCookiesFile", () => pickCookiesFile());
+ipcMain.handle("accounts:importCookiesText", (_e, accountId, text) => importCookiesFromText(accountId, text));
 
 ipcMain.handle("accounts:openInEmulator", (_e, accountId) => openInEmulator(accountId));
 ipcMain.handle("accounts:quitEmulator", (_e, accountId) => quitEmulator(accountId));

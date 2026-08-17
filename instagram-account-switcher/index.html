@@ -79,6 +79,22 @@
     </div>
   </div>
 
+  <div id="cookiesImportModal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-title">Импорт cookies</div>
+      <textarea
+        id="cookiesImportInput"
+        rows="6"
+        placeholder="Вставь JSON-массив cookies или строку вида name1=value1; name2=value2; ..."
+      ></textarea>
+      <div class="row">
+        <button id="cookiesPickFileBtn">📂 Из файла</button>
+        <button id="cookiesImportSaveBtn" class="primary">Импортировать</button>
+        <button id="cookiesImportCancelBtn">Отмена</button>
+      </div>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

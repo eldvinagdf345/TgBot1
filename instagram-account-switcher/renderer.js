@@ -187,13 +187,50 @@ document.getElementById("ctxExportCookies").addEventListener("click", async () =
   alert(res.ok ? `Сохранено (${res.count} cookies): ${res.filePath}` : `❌ ${res.error}`);
 });
 
-document.getElementById("ctxImportCookies").addEventListener("click", async () => {
+let cookiesImportTargetId = null;
+
+function openCookiesImportModal(accountId) {
+  cookiesImportTargetId = accountId;
+  document.getElementById("cookiesImportInput").value = "";
+  document.getElementById("cookiesImportModal").hidden = false;
+  window.accountsAPI.setBrowserViewVisible(false);
+}
+
+function closeCookiesImportModal() {
+  document.getElementById("cookiesImportModal").hidden = true;
+  cookiesImportTargetId = null;
+  window.accountsAPI.setBrowserViewVisible(true);
+}
+
+document.getElementById("ctxImportCookies").addEventListener("click", () => {
   if (!ctxAccountId) return;
   const targetId = ctxAccountId;
   closeCtxMenu();
-  const res = await window.accountsAPI.importCookies(targetId);
-  if (res.error === "Отменено") return;
-  alert(res.ok ? `Импортировано cookies: ${res.imported}. Обнови страницу (🔄), если логин не виден.` : `❌ ${res.error}`);
+  openCookiesImportModal(targetId);
+});
+
+document.getElementById("cookiesImportCancelBtn").addEventListener("click", closeCookiesImportModal);
+
+document.getElementById("cookiesPickFileBtn").addEventListener("click", async () => {
+  const res = await window.accountsAPI.pickCookiesFile();
+  if (res.ok) document.getElementById("cookiesImportInput").value = res.text;
+});
+
+document.getElementById("cookiesImportSaveBtn").addEventListener("click", async () => {
+  if (!cookiesImportTargetId) return;
+  const targetId = cookiesImportTargetId;
+  const text = document.getElementById("cookiesImportInput").value;
+  if (!text.trim()) {
+    alert("Вставь текст cookies или выбери файл.");
+    return;
+  }
+  closeCookiesImportModal();
+  const res = await window.accountsAPI.importCookiesText(targetId, text);
+  alert(
+    res.ok
+      ? `Импортировано cookies: ${res.imported}. Обнови страницу (🔄), если логин не виден.`
+      : `❌ ${res.error}`
+  );
 });
 
 // --- Общая модалка подтверждения (вместо window.confirm) ---

@@ -394,7 +394,8 @@ body {
   margin-bottom: 12px;
 }
 
-.modal-box input {
+.modal-box input,
+.modal-box textarea {
   width: 100%;
   background: #0A0D14;
   border: 1px solid #1F2937;
@@ -404,6 +405,8 @@ body {
   font-size: 13px;
   margin-bottom: 12px;
   box-sizing: border-box;
+  font-family: inherit;
+  resize: vertical;
 }
 
 .modal-box .row { display: flex; gap: 8px; }
