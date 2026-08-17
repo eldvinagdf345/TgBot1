@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("accountsAPI", {
   toggleMobile: (id) => ipcRenderer.invoke("accounts:toggleMobile", id),
   remove: (id) => ipcRenderer.invoke("accounts:remove", id),
   setLdIndex: (id, ldIndex) => ipcRenderer.invoke("accounts:setLdIndex", id, ldIndex),
+  exportCookies: (id) => ipcRenderer.invoke("accounts:exportCookies", id),
+  importCookies: (id) => ipcRenderer.invoke("accounts:importCookies", id),
   openInEmulator: (id) => ipcRenderer.invoke("accounts:openInEmulator", id),
   quitEmulator: (id) => ipcRenderer.invoke("accounts:quitEmulator", id),
   openAllInEmulators: () => ipcRenderer.invoke("accounts:openAllInEmulators"),

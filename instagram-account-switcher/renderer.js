@@ -176,6 +176,26 @@ document.getElementById("ldIndexCancelBtn").addEventListener("click", () => {
   closeLdIndexModal();
 });
 
+// --- Экспорт/импорт cookies ---
+
+document.getElementById("ctxExportCookies").addEventListener("click", async () => {
+  if (!ctxAccountId) return;
+  const targetId = ctxAccountId;
+  closeCtxMenu();
+  const res = await window.accountsAPI.exportCookies(targetId);
+  if (res.error === "Отменено") return;
+  alert(res.ok ? `Сохранено (${res.count} cookies): ${res.filePath}` : `❌ ${res.error}`);
+});
+
+document.getElementById("ctxImportCookies").addEventListener("click", async () => {
+  if (!ctxAccountId) return;
+  const targetId = ctxAccountId;
+  closeCtxMenu();
+  const res = await window.accountsAPI.importCookies(targetId);
+  if (res.error === "Отменено") return;
+  alert(res.ok ? `Импортировано cookies: ${res.imported}. Обнови страницу (🔄), если логин не виден.` : `❌ ${res.error}`);
+});
+
 // --- Общая модалка подтверждения (вместо window.confirm) ---
 
 let confirmCallback = null;

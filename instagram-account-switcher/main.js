@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, session, Menu } = require("electron");
+const { app, BrowserWindow, BrowserView, ipcMain, session, Menu, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
@@ -284,6 +284,80 @@ function switchTo(accountId) {
   }
 }
 
+// Экспорт/импорт cookies — чтобы быстро восстановить свою же сессию
+// (например, после сброса partition или на новой машине), не проходя
+// логин/пароль/2FA заново каждый раз. Работает с cookies текущей сессии
+// аккаунта, никак не завязано на сторонние/чужие аккаунты.
+async function exportCookies(accountId) {
+  const account = accounts.find((a) => a.id === accountId);
+  if (!account) return { ok: false, error: "Аккаунт не найден" };
+
+  const ses = session.fromPartition(account.partition);
+  const cookies = await ses.cookies.get({ domain: "instagram.com" });
+  if (cookies.length === 0) {
+    return { ok: false, error: "У этого аккаунта нет сохранённых cookies — сначала залогинься." };
+  }
+
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: "Сохранить cookies",
+    defaultPath: `${account.label.replace(/[^\w-]+/g, "_")}-cookies.json`,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (canceled || !filePath) return { ok: false, error: "Отменено" };
+
+  fs.writeFileSync(filePath, JSON.stringify(cookies, null, 2));
+  return { ok: true, filePath, count: cookies.length };
+}
+
+async function importCookies(accountId) {
+  const account = accounts.find((a) => a.id === accountId);
+  if (!account) return { ok: false, error: "Аккаунт не найден" };
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: "Выбери файл с cookies",
+    filters: [{ name: "JSON", extensions: ["json"] }],
+    properties: ["openFile"],
+  });
+  if (canceled || filePaths.length === 0) return { ok: false, error: "Отменено" };
+
+  let cookies;
+  try {
+    cookies = JSON.parse(fs.readFileSync(filePaths[0], "utf-8"));
+    if (!Array.isArray(cookies)) throw new Error("не массив");
+  } catch (err) {
+    return { ok: false, error: `Файл повреждён или не в том формате: ${err.message}` };
+  }
+
+  const ses = session.fromPartition(account.partition);
+  let imported = 0;
+  for (const c of cookies) {
+    try {
+      const protocol = c.secure ? "https:" : "http:";
+      const domain = String(c.domain || "").replace(/^\./, "");
+      const setDetails = {
+        url: `${protocol}//${domain}${c.path || "/"}`,
+        name: c.name,
+        value: c.value,
+        domain: c.domain,
+        path: c.path,
+        secure: c.secure,
+        httpOnly: c.httpOnly,
+        sameSite: c.sameSite,
+      };
+      if (!c.session && c.expirationDate) setDetails.expirationDate = c.expirationDate;
+      await ses.cookies.set(setDetails);
+      imported++;
+    } catch (err) {
+      logCrash(err);
+    }
+  }
+
+  const view = views.get(accountId);
+  if (view) view.webContents.reload();
+
+  return { ok: true, imported };
+}
+
 // BrowserView рисуется отдельным нативным слоем поверх всей страницы
 // независимо от CSS/z-index — оверлеи вроде контекстного меню, вылезающие
 // за пределы узкой боковой панели, им перекрывает. Прячем на время оверлея.
@@ -449,6 +523,9 @@ ipcMain.handle("accounts:setLdIndex", (_e, accountId, ldIndex) => {
   }
   return accounts;
 });
+
+ipcMain.handle("accounts:exportCookies", (_e, accountId) => exportCookies(accountId));
+ipcMain.handle("accounts:importCookies", (_e, accountId) => importCookies(accountId));
 
 ipcMain.handle("accounts:openInEmulator", (_e, accountId) => openInEmulator(accountId));
 ipcMain.handle("accounts:quitEmulator", (_e, accountId) => quitEmulator(accountId));
