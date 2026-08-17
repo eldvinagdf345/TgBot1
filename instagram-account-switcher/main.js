@@ -351,6 +351,19 @@ function parseCookiesInput(text) {
     .filter(Boolean);
 }
 
+// Расширения-экспортёры cookies (Cookie-Editor и т.п.) отдают sameSite как
+// "None"/"Lax"/"Strict" или вообще без значения — Electron же принимает
+// только "no_restriction"/"lax"/"strict"/"unspecified". Без этой подмены
+// cookies.set() тихо падает на каждой cookie с "None", и импорт не даёт
+// вообще никакого эффекта, хотя формально отрабатывает без ошибки на вид.
+function mapSameSite(value) {
+  const v = String(value || "").toLowerCase();
+  if (v === "no_restriction" || v === "none") return "no_restriction";
+  if (v === "lax") return "lax";
+  if (v === "strict") return "strict";
+  return "unspecified";
+}
+
 async function importCookiesFromText(accountId, text) {
   const account = accounts.find((a) => a.id === accountId);
   if (!account) return { ok: false, error: "Аккаунт не найден" };
@@ -362,6 +375,7 @@ async function importCookiesFromText(accountId, text) {
 
   const ses = session.fromPartition(account.partition);
   let imported = 0;
+  const failures = [];
   for (const c of cookies) {
     try {
       const secure = c.secure !== false;
@@ -375,12 +389,13 @@ async function importCookiesFromText(accountId, text) {
         path: c.path || "/",
         secure,
         httpOnly: !!c.httpOnly,
+        sameSite: mapSameSite(c.sameSite),
       };
-      if (c.sameSite) setDetails.sameSite = c.sameSite;
       if (!c.session && c.expirationDate) setDetails.expirationDate = c.expirationDate;
       await ses.cookies.set(setDetails);
       imported++;
     } catch (err) {
+      failures.push(`${c.name}: ${err.message}`);
       logCrash(err);
     }
   }
@@ -388,7 +403,7 @@ async function importCookiesFromText(accountId, text) {
   const view = views.get(accountId);
   if (view) view.webContents.reload();
 
-  return { ok: true, imported };
+  return { ok: true, imported, total: cookies.length, failures };
 }
 
 // BrowserView рисуется отдельным нативным слоем поверх всей страницы

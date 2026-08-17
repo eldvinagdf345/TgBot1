@@ -226,10 +226,13 @@ document.getElementById("cookiesImportSaveBtn").addEventListener("click", async 
   }
   closeCookiesImportModal();
   const res = await window.accountsAPI.importCookiesText(targetId, text);
+  if (!res.ok) {
+    alert(`❌ ${res.error}`);
+    return;
+  }
+  const failuresText = res.failures?.length ? `\n\nОшибки:\n${res.failures.join("\n")}` : "";
   alert(
-    res.ok
-      ? `Импортировано cookies: ${res.imported}. Обнови страницу (🔄), если логин не виден.`
-      : `❌ ${res.error}`
+    `Импортировано: ${res.imported} из ${res.total}.${failuresText}\nОбнови страницу (🔄), если логин не виден.`
   );
 });
 
